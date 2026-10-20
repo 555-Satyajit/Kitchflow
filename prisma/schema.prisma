@@ -1,0 +1,138 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// 1. Kitchens (Multi-tenant root)
+model Kitchen {
+  id          String       @id @default(uuid())
+  name        String
+  address     String?
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  brands      Brand[]
+  ingredients Ingredient[]
+  orders      Order[]
+}
+
+// 2. Virtual Brands (Multiple virtual brands sharing one kitchen)
+model Brand {
+  id          String     @id @default(uuid())
+  kitchenId   String
+  kitchen     Kitchen    @relation(fields: [kitchenId], references: [id], onDelete: Cascade)
+  name        String
+  tagline     String?
+  color       String     @default("#f97316")
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  menuItems   MenuItem[]
+  orders      Order[]
+}
+
+// 3. Raw Ingredient Master
+model Ingredient {
+  id           String             @id @default(uuid())
+  kitchenId    String
+  kitchen      Kitchen            @relation(fields: [kitchenId], references: [id], onDelete: Cascade)
+  name         String
+  unit         String             // g, ml, pc, kg, l
+  currentStock Float              @default(0)
+  minThreshold Float              @default(0)
+  costPerUnit  Float              @default(0)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  recipes      RecipeIngredient[]
+  ledger       StockLedgerEntry[]
+}
+
+// 4. Menu Items
+model MenuItem {
+  id            String             @id @default(uuid())
+  brandId       String
+  brand         Brand              @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  name          String
+  station       String             // GRILL, FRY, ASSEMBLY, PACKING
+  sellingPrice  Float
+  packagingCost Float              @default(15.0)
+  isAvailable   Boolean            @default(true)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  recipe        RecipeIngredient[]
+  orderItems    OrderItem[]
+}
+
+// 5. Bill of Materials (BOM) linking MenuItem to Ingredients
+model RecipeIngredient {
+  id           String     @id @default(uuid())
+  menuItemId   String
+  menuItem     MenuItem   @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  ingredientId String
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+  quantity     Float
+
+  @@unique([menuItemId, ingredientId])
+}
+
+// 6. Orders
+model Order {
+  id                 String      @id @default(uuid())
+  kitchenId          String
+  kitchen            Kitchen     @relation(fields: [kitchenId], references: [id])
+  brandId            String
+  brand              Brand       @relation(fields: [brandId], references: [id])
+  channel            String      // SWIGGY, ZOMATO, DIRECT, WALK_IN
+  orderNumber        String
+  customerName       String?
+  status             String      @default("RECEIVED") // RECEIVED, ACCEPTED, PREPARING, READY, DISPATCHED, CANCELLED
+  targetPrepMinutes  Int         @default(15)
+  grossAmount        Float
+  discount           Float       @default(0)
+  commissionRate     Float       @default(0.22)
+  commissionAmount   Float       @default(0)
+  ingredientCost     Float       @default(0)
+  packagingCost      Float       @default(0)
+  netMargin          Float       @default(0)
+  createdAt          DateTime    @default(now())
+  readyAt            DateTime?
+
+  items              OrderItem[]
+  ledgerEntries      StockLedgerEntry[]
+}
+
+// 7. Order Items
+model OrderItem {
+  id           String    @id @default(uuid())
+  orderId      String
+  order        Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId   String?
+  menuItem     MenuItem? @relation(fields: [menuItemId], references: [id], onDelete: SetNull)
+  name         String
+  station      String
+  quantity     Int       @default(1)
+  price        Float
+  isStationDone Boolean  @default(false)
+}
+
+// 8. Immutable Stock Ledger (Audit Trail)
+model StockLedgerEntry {
+  id           String      @id @default(uuid())
+  ingredientId String
+  ingredient   Ingredient  @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+  orderId      String?
+  order        Order?      @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  delta        Float       // Negative for consumption, positive for restock
+  balanceAfter Float
+  reason       String      // ORDER_CONSUMPTION, PURCHASE_RESTOCK, WASTAGE_SPOILAGE, PHYSICAL_AUDIT_CORRECTION
+  notes        String?
+  createdAt    DateTime    @default(now())
+}
