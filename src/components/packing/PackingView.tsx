@@ -129,9 +129,19 @@ export function PackingView({
                           {isKdsReady ? "KDS Ready" : "Cooking on Line"}
                         </Badge>
                       </div>
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5 flex-wrap">
                         <span className="font-semibold text-foreground">{order.brandName}</span>
                         <span>• {order.customerName}</span>
+                        {order.customerPhone && (
+                          <span className="text-[10px] text-muted-foreground font-mono bg-muted/60 px-1 rounded border border-border/60">
+                            📞 {order.customerPhone}
+                          </span>
+                        )}
+                        {order.customerAddress && (
+                          <span className="text-[10px] text-muted-foreground truncate max-w-[180px]" title={order.customerAddress}>
+                            📍 {order.customerAddress}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <Badge variant="outline" className="text-[10px] font-mono uppercase">
@@ -215,11 +225,16 @@ export function PackingView({
                   <Button
                     disabled={!isAllChecked}
                     onClick={() => onCompletePacking(order.id)}
-                    className="w-full text-xs h-9 font-medium gap-1.5 shadow-xs"
+                    className={cn(
+                      "w-full text-xs h-10 font-bold gap-2 shadow-xs cursor-pointer transition-all active:scale-[0.99]",
+                      isAllChecked 
+                        ? "bg-primary text-primary-foreground hover:bg-primary/90" 
+                        : "opacity-50 cursor-not-allowed"
+                    )}
                     variant={isAllChecked ? "default" : "outline"}
                   >
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>{isAllChecked ? 'Tamper Sealed & Ready for Rider Handover' : 'Complete Applicable Checks to Seal'}</span>
+                    <span>{isAllChecked ? 'Tamper Sealed & Hand to Rider (Dispatch)' : 'Complete Applicable Checks to Seal'}</span>
                   </Button>
                 </div>
               </Card>

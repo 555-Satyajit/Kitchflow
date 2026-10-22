@@ -1,20 +1,26 @@
 'use client'
 
-import React from 'react'
+import React, { useState } from 'react'
 import { OrdersQueueView } from '@/components/orders/OrdersQueueView'
 import { MarginModal } from '@/components/margins/MarginModal'
+import { ManualOrderModal } from '@/components/orders/ManualOrderModal'
 import { useKitchen } from '@/context/KitchenContext'
 
 export default function OrdersPage() {
   const {
     orders,
+    brands,
+    menuItems,
     userRole,
     setUserRole,
     handleUpdateStatus,
     inspectingOrder,
     setInspectingOrder,
     handleSimulateNewOrder,
+    handleCreateManualOrder,
   } = useKitchen()
+
+  const [isManualOrderOpen, setIsManualOrderOpen] = useState(false)
 
   // Guard: Cooks focus exclusively on KDS and Dispatch
   if (userRole === 'LINE_COOK') {
@@ -53,6 +59,14 @@ export default function OrdersPage() {
         onUpdateStatus={handleUpdateStatus}
         onInspectFinancials={(o) => setInspectingOrder(o)}
         onSimulateNewOrder={handleSimulateNewOrder}
+        onOpenManualOrder={() => setIsManualOrderOpen(true)}
+      />
+      <ManualOrderModal
+        open={isManualOrderOpen}
+        onOpenChange={setIsManualOrderOpen}
+        brands={brands}
+        menuItems={menuItems}
+        onCreateOrder={handleCreateManualOrder}
       />
       <MarginModal
         order={inspectingOrder}

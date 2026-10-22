@@ -21,7 +21,11 @@ import {
   Mic,
   MicOff,
   Trash2,
-  Edit2
+  Edit2,
+  Store,
+  ShoppingCart,
+  Download,
+  FileSpreadsheet
 } from 'lucide-react'
 import { estimateRecipeBOM, AIBOMSuggestion } from '@/lib/aiBOMEstimator'
 import { Card } from '@/components/ui/card'
@@ -29,6 +33,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { PurchaseOrderModal } from '@/components/inventory/PurchaseOrderModal'
 import {
   Dialog,
   DialogContent,
@@ -72,6 +77,8 @@ export function InventoryView({
 }: InventoryViewProps) {
   const lowStockItems = ingredients.filter((i) => i.currentStock <= i.minThreshold)
   const [activeTab, setActiveTab] = useState<'STOCK' | 'MENU' | 'LEDGER'>('STOCK')
+  const [selectedBrandFilter, setSelectedBrandFilter] = useState<string>('ALL')
+  const [isPurchaseOrderOpen, setIsPurchaseOrderOpen] = useState(false)
 
   // Stock Adjustment Dialog State
   const [adjustingIng, setAdjustingIng] = useState<Ingredient | null>(null)
@@ -213,6 +220,7 @@ export function InventoryView({
   // Dialog State: Add Raw Ingredient
   const [isIngDialogOpen, setIsIngDialogOpen] = useState(false)
   const [newIngName, setNewIngName] = useState('')
+  const [newIngBrandId, setNewIngBrandId] = useState<string>('SHARED')
   const [newIngUnit, setNewIngUnit] = useState<'g' | 'ml' | 'pc' | 'kg' | 'l'>('g')
   const [newIngStock, setNewIngStock] = useState('1000')
   const [newIngThreshold, setNewIngThreshold] = useState('300')
@@ -232,6 +240,7 @@ export function InventoryView({
       // Auto-create in inventory stockroom if it doesn't exist yet
       if (!existingIng) {
         onAddIngredient({
+          brandId: newItemBrandId,
           name: r.ingredientName,
           unit: r.unit,
           currentStock: r.unit === 'pc' ? 50 : 2500,
@@ -274,6 +283,7 @@ export function InventoryView({
     if (!newIngName.trim()) return
 
     onAddIngredient({
+      brandId: newIngBrandId === 'SHARED' ? undefined : newIngBrandId,
       name: newIngName.trim(),
       unit: newIngUnit,
       currentStock: parseFloat(newIngStock) || 500,
@@ -338,18 +348,17 @@ export function InventoryView({
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-
           {/* Add Ingredient Dialog */}
           <Dialog open={isIngDialogOpen} onOpenChange={setIsIngDialogOpen}>
             <DialogTrigger asChild>
-              <Button variant="outline" size="sm" className="text-xs h-8 gap-1.5 font-medium">
+              <Button variant="outline" size="sm" className="text-xs h-8 gap-1.5 font-medium cursor-pointer">
                 <PackagePlus className="w-3.5 h-3.5" />
                 <span>+ Raw SKU</span>
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
+            <DialogContent className="w-[95vw] max-w-md max-h-[85dvh] p-4 sm:p-6 overflow-y-auto rounded-2xl">
               <form onSubmit={handleCreateIngredient}>
-                <DialogHeader>
+                <DialogHeader className="text-left">
                   <DialogTitle className="text-base font-bold">Add Raw Ingredient SKU</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-3 py-4 text-xs">
@@ -363,6 +372,30 @@ export function InventoryView({
                       required
                     />
                   </div>
+
+                  {/* Brand Scope Selector */}
+                  <div className="space-y-1.5">
+                    <Label htmlFor="ing-brand" className="flex items-center gap-1">
+                      <Store className="w-3.5 h-3.5 text-primary" />
+                      <span>Brand Allocation</span>
+                    </Label>
+                    <select
+                      id="ing-brand"
+                      value={newIngBrandId}
+                      onChange={(e) => setNewIngBrandId(e.target.value)}
+                      className="w-full h-9 rounded-md border border-input bg-transparent px-3 text-xs"
+                    >
+                      <option value="SHARED" className="bg-background text-foreground font-semibold">
+                        🌐 Shared Kitchen Inventory (All Brands)
+                      </option>
+                      {brands.map((b) => (
+                        <option key={b.id} value={b.id} className="bg-background text-foreground">
+                          {b.name} (Exclusive)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label htmlFor="ing-unit">Unit</Label>
@@ -425,6 +458,21 @@ export function InventoryView({
               </form>
             </DialogContent>
           </Dialog>
+
+          {/* Smart Order Stock / Procurement Modal Trigger */}
+          <Button
+            size="sm"
+            onClick={() => setIsPurchaseOrderOpen(true)}
+            className="text-xs h-8 gap-1.5 font-bold shadow-xs bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+          >
+            <ShoppingCart className="w-3.5 h-3.5" />
+            <span>Order Stock</span>
+            {lowStockItems.length > 0 && (
+              <Badge variant="destructive" className="h-4 px-1 text-[9px] font-mono leading-none">
+                {lowStockItems.length}
+              </Badge>
+            )}
+          </Button>
 
           {/* Single Trigger Button */}
           <Button
@@ -706,8 +754,8 @@ export function InventoryView({
             </Dialog>
           ) : (
             <Sheet open={isMenuItemDialogOpen} onOpenChange={setIsMenuItemDialogOpen}>
-              <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto rounded-t-2xl p-4 safe-area-pb">
-                <form onSubmit={handleCreateMenuItem} className="space-y-3">
+              <SheetContent side="bottom" className="max-h-[82dvh] overflow-y-auto rounded-t-2xl p-4 pb-8 safe-area-pb">
+                <form onSubmit={handleCreateMenuItem} className="space-y-3 pb-4">
                   <SheetHeader className="p-0 pb-2 border-b border-border text-left">
                     <SheetTitle className="text-base font-bold flex items-center justify-between">
                       <span>Add Kitchen Menu Item</span>
@@ -991,6 +1039,87 @@ export function InventoryView({
         </Button>
       </div>
 
+      {/* Brand-Scoped Filter Bar */}
+      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground font-mono shrink-0 mr-1 flex items-center gap-1">
+          <Store className="w-3.5 h-3.5 text-primary" />
+          <span>Brand View:</span>
+        </span>
+
+        <button
+          type="button"
+          onClick={() => setSelectedBrandFilter('ALL')}
+          className={cn(
+            "px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition-all border cursor-pointer shrink-0",
+            selectedBrandFilter === 'ALL'
+              ? "bg-foreground text-background border-foreground shadow-2xs"
+              : "bg-muted/50 text-muted-foreground border-border/80 hover:text-foreground"
+          )}
+        >
+          All Brands ({brands.length})
+        </button>
+
+        {brands.map((b) => {
+          const brandDishesCount = menuItems.filter((m) => m.brandId === b.id).length
+          const isSelected = selectedBrandFilter === b.id
+
+          return (
+            <button
+              type="button"
+              key={b.id}
+              onClick={() => setSelectedBrandFilter(b.id)}
+              className={cn(
+                "px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition-all border cursor-pointer shrink-0 flex items-center gap-1.5",
+                isSelected
+                  ? "bg-primary text-primary-foreground border-primary shadow-2xs"
+                  : "bg-background text-foreground border-border/80 hover:bg-muted"
+              )}
+            >
+              <span className="w-2 h-2 rounded-full shrink-0 shadow-2xs" style={{ backgroundColor: b.color }} />
+              <span>{b.name}</span>
+              <span className={cn(
+                "text-[10px] px-1 py-0.2 rounded-full font-mono",
+                isSelected ? "bg-primary-foreground/20 text-primary-foreground" : "bg-muted text-muted-foreground"
+              )}>
+                {brandDishesCount}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Brand-filtered collections */}
+      {(() => {
+        // Filter menu items by selected brand
+        const displayedMenuItems = selectedBrandFilter === 'ALL'
+          ? menuItems
+          : menuItems.filter((m) => m.brandId === selectedBrandFilter)
+
+        // Filter raw ingredients used by this brand's recipes
+        const brandIngredientIds = new Set<string>()
+        displayedMenuItems.forEach((m) => {
+          (m.recipe || []).forEach((r) => brandIngredientIds.add(r.ingredientId))
+        })
+
+        const displayedIngredients = selectedBrandFilter === 'ALL'
+          ? ingredients
+          : ingredients.filter((ing) => 
+              ing.brandId === selectedBrandFilter ||
+              brandIngredientIds.has(ing.id) || 
+              displayedMenuItems.some(m => (m.recipe || []).some(r => r.ingredientName.toLowerCase() === ing.name.toLowerCase()))
+            )
+
+        // Filter ledger entries for those ingredients
+        const displayedIngredientNames = new Set(displayedIngredients.map((i) => i.name.toLowerCase()))
+        const displayedStockLedger = selectedBrandFilter === 'ALL'
+          ? stockLedger
+          : stockLedger.filter((entry) => displayedIngredientNames.has(entry.ingredientName.toLowerCase()))
+
+        const activeBrand = brands.find((b) => b.id === selectedBrandFilter)
+
+        return (
+          <>
+
       {/* Tab 1: Raw Ingredients */}
       {activeTab === 'STOCK' && (
         <div className="space-y-4">
@@ -1016,7 +1145,7 @@ export function InventoryView({
 
           {/* Sorted Ingredient Cards (Zero & Low items first) */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-            {[...ingredients]
+            {[...displayedIngredients]
               .sort((a, b) => {
                 const aUrgency = a.currentStock <= 0 ? 0 : a.currentStock <= a.minThreshold ? 1 : 2
                 const bUrgency = b.currentStock <= 0 ? 0 : b.currentStock <= b.minThreshold ? 1 : 2
@@ -1049,6 +1178,15 @@ export function InventoryView({
                             <h4 className="text-sm font-bold text-foreground leading-tight truncate">
                               {ing.name}
                             </h4>
+                            {ing.brandId && (
+                              <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 shrink-0 flex items-center gap-1">
+                                <span 
+                                  className="w-1.5 h-1.5 rounded-full" 
+                                  style={{ backgroundColor: brands.find(b => b.id === ing.brandId)?.color || '#f97316' }} 
+                                />
+                                <span>{brands.find(b => b.id === ing.brandId)?.name}</span>
+                              </span>
+                            )}
                             {isZero && (
                               <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-red-600 text-white shrink-0">
                                 Depleted (86)
@@ -1186,7 +1324,7 @@ export function InventoryView({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-            {menuItems.map((item) => {
+            {displayedMenuItems.map((item) => {
               const brand = brands.find((b) => b.id === item.brandId)
 
               return (
@@ -1201,8 +1339,9 @@ export function InventoryView({
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] font-semibold uppercase px-1.5 py-0 rounded bg-muted text-muted-foreground">
-                            {brand?.name}
+                          <span className="text-[10px] font-semibold uppercase px-1.5 py-0 rounded bg-muted text-muted-foreground flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: brand?.color }} />
+                            <span>{brand?.name}</span>
                           </span>
                           <span className="text-[10px] font-mono text-muted-foreground uppercase">
                             Station: {item.station}
@@ -1300,7 +1439,7 @@ export function InventoryView({
       {/* Tab 3: Stock Audit Ledger */}
       {activeTab === 'LEDGER' && (
         <Card className="p-5 border-border shadow-2xs space-y-4">
-          <div className="flex items-center justify-between border-b border-border pb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-3">
             <div>
               <h3 className="text-sm font-bold text-foreground">
                 Inventory Stock Ledger & Variance Audit Trail
@@ -1309,9 +1448,40 @@ export function InventoryView({
                 Every deduction, recipe consumption, wastage, and supplier purchase recorded with timestamps
               </p>
             </div>
-            <Badge variant="outline" className="font-mono text-xs">
-              {stockLedger.length} Ledger Events
-            </Badge>
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (stockLedger.length === 0) return
+                  const headers = ['Timestamp', 'Ingredient', 'Reason Code', 'Previous Stock', 'Change Delta', 'New Stock', 'Unit', 'Audit Note']
+                  const rows = stockLedger.map((e) => [
+                    `"${new Date(e.timestamp).toLocaleString('en-IN')}"`,
+                    `"${e.ingredientName.replace(/"/g, '""')}"`,
+                    `"${e.reason}"`,
+                    e.previousStock,
+                    e.delta,
+                    e.newStock,
+                    `"${e.unit}"`,
+                    `"${(e.note || '').replace(/"/g, '""')}"`
+                  ])
+                  const csv = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
+                  const link = document.createElement('a')
+                  link.setAttribute('href', encodeURI(csv))
+                  link.setAttribute('download', `KitchFlow_Stock_Ledger_${new Date().toISOString().slice(0, 10)}.csv`)
+                  document.body.appendChild(link)
+                  link.click()
+                  document.body.removeChild(link)
+                }}
+                className="h-8 text-xs font-bold gap-1.5 border-border/80 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Export Ledger (CSV)</span>
+              </Button>
+              <Badge variant="outline" className="font-mono text-xs">
+                {stockLedger.length} Events
+              </Badge>
+            </div>
           </div>
 
           {/* Responsive Table Wrapper */}
@@ -1370,6 +1540,9 @@ export function InventoryView({
           </div>
         </Card>
       )}
+          </>
+        )
+      })()}
 
       {/* Stock Adjustment with Reason Code Modal */}
       <Dialog open={Boolean(adjustingIng)} onOpenChange={(open) => !open && setAdjustingIng(null)}>
@@ -1450,6 +1623,24 @@ export function InventoryView({
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Purchase Order & Procurement Indent Modal */}
+      <PurchaseOrderModal
+        open={isPurchaseOrderOpen}
+        onOpenChange={setIsPurchaseOrderOpen}
+        ingredients={ingredients}
+        brands={brands}
+        onFulfillPurchaseOrder={(items) => {
+          items.forEach((it) => {
+            onAdjustStockWithReason(
+              it.ingredientId,
+              it.addedStock,
+              'PURCHASE_INFLOW',
+              'Supplier order received & stocked'
+            )
+          })
+        }}
+      />
     </div>
   )
 }

@@ -255,3 +255,35 @@ export const INITIAL_STOCK_LEDGER: StockLedgerEntry[] = [
     timestamp: new Date(Date.now() - 120 * 60 * 1000).toISOString(),
   }
 ];
+
+export const INITIAL_PURCHASE_ORDERS = [
+  {
+    id: 'po-101',
+    poNumber: 'PO-101',
+    supplierName: 'Metro Cash & Carry / Wholesale Mandi',
+    horizon: 'LOW_STOCK' as const,
+    status: 'PENDING_DELIVERY' as const,
+    items: [
+      { ingredientId: 'i3', ingredientName: 'Brioche Burger Bun', quantity: 20, unit: 'pc', costPerUnit: 18.00 },
+      { ingredientId: 'i4', ingredientName: 'Crispy Chicken Patty', quantity: 15, unit: 'pc', costPerUnit: 42.00 },
+    ],
+    totalEstimatedCost: 990,
+    createdAt: new Date(Date.now() - 35 * 60 * 1000).toISOString(),
+    note: 'Urgent restocking for evening dinner rush'
+  },
+  {
+    id: 'po-100',
+    poNumber: 'PO-100',
+    supplierName: 'City Fresh Poultry & Grains',
+    horizon: 'WEEKLY' as const,
+    status: 'RECEIVED' as const,
+    items: [
+      { ingredientId: 'i1', ingredientName: 'Basmati Rice', quantity: 10000, unit: 'g', costPerUnit: 0.12 },
+      { ingredientId: 'i2', ingredientName: 'Chicken Breast / Curry Cut', quantity: 5000, unit: 'g', costPerUnit: 0.28 },
+    ],
+    totalEstimatedCost: 2600,
+    createdAt: new Date(Date.now() - 14 * 60 * 60 * 1000).toISOString(),
+    receivedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+    note: 'Morning supply batch'
+  }
+];

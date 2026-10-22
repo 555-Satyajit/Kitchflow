@@ -13,6 +13,7 @@ interface OrdersQueueViewProps {
   onUpdateStatus: (orderId: string, newStatus: OrderStatus) => void
   onInspectFinancials: (order: Order) => void
   onSimulateNewOrder: () => void
+  onOpenManualOrder?: () => void
 }
 
 export function OrdersQueueView({
@@ -20,6 +21,7 @@ export function OrdersQueueView({
   onUpdateStatus,
   onInspectFinancials,
   onSimulateNewOrder,
+  onOpenManualOrder,
 }: OrdersQueueViewProps) {
   const [filter, setFilter] = useState<'ALL' | 'ACTIVE' | 'READY'>('ALL')
   const [now, setNow] = useState<number>(0)
@@ -97,14 +99,27 @@ export function OrdersQueueView({
         </div>
 
         <div className="flex items-center gap-2">
+          {onOpenManualOrder && (
+            <Button
+              onClick={onOpenManualOrder}
+              variant="default"
+              size="sm"
+              className="text-xs h-9 gap-1.5 font-bold shadow-xs bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+            >
+              <ShoppingBag className="w-4 h-4" />
+              <span>+ New Order (POS)</span>
+            </Button>
+          )}
+
           <Button
             onClick={onSimulateNewOrder}
-            variant="default"
+            variant="outline"
             size="sm"
             className="text-xs h-9 gap-1.5 font-medium shadow-xs"
           >
             <Plus className="w-4 h-4" />
-            <span>Simulate Order</span>
+            <span className="hidden sm:inline">Simulate Order</span>
+            <span className="sm:hidden">Simulate</span>
           </Button>
         </div>
       </div>
@@ -217,9 +232,19 @@ export function OrdersQueueView({
                           <span>{sla.text}</span>
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 text-xs">
+                      <div className="flex items-center gap-2 text-xs flex-wrap">
                         <span className="font-bold text-foreground">{order.brandName}</span>
                         <span className="text-foreground/80 font-medium">• {order.customerName}</span>
+                        {order.customerPhone && (
+                          <span className="text-[10px] text-muted-foreground font-mono bg-muted/60 px-1.5 py-0.2 rounded border border-border/60">
+                            📞 {order.customerPhone}
+                          </span>
+                        )}
+                        {order.customerAddress && (
+                          <span className="text-[10px] text-muted-foreground truncate max-w-[200px]" title={order.customerAddress}>
+                            📍 {order.customerAddress}
+                          </span>
+                        )}
                       </div>
                     </div>
 

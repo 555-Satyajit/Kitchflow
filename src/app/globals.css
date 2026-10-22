@@ -72,6 +72,10 @@ html, body {
   padding-bottom: env(safe-area-inset-bottom, 1rem);
 }
 
+.safe-area-pt {
+  padding-top: env(safe-area-inset-top, 0rem);
+}
+
 .kitchen-card {
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }

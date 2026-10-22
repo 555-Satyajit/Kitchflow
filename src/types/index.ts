@@ -48,8 +48,35 @@ export interface StockLedgerEntry {
   timestamp: string;
 }
 
+export interface PurchaseOrderItem {
+  ingredientId: string;
+  ingredientName: string;
+  quantity: number;
+  receivedQuantity?: number; // Actual quantity delivered after physical intake
+  unit: string;
+  costPerUnit: number;
+}
+
+export type PurchaseOrderStatus = 'PENDING_DELIVERY' | 'RECEIVED' | 'PARTIALLY_RECEIVED' | 'CANCELLED';
+
+export interface PurchaseOrder {
+  id: string;
+  poNumber: string;
+  supplierName: string;
+  horizon: 'MANUAL' | 'LOW_STOCK' | 'WEEKLY' | 'MONTHLY';
+  status: PurchaseOrderStatus;
+  items: PurchaseOrderItem[];
+  totalEstimatedCost: number;
+  actualCost?: number;
+  createdAt: string;
+  receivedAt?: string;
+  note?: string;
+  discrepancyNote?: string;
+}
+
 export interface Ingredient {
   id: string;
+  brandId?: string; // Optional: specific to a virtual brand or shared across kitchen if undefined
   name: string;
   unit: 'g' | 'ml' | 'pc' | 'kg' | 'l';
   currentStock: number;
@@ -126,6 +153,8 @@ export interface Order {
   brandId: string;
   brandName: string;
   customerName: string;
+  customerPhone?: string;
+  customerAddress?: string;
   status: OrderStatus;
   items: OrderItem[];
   checklist: PackingChecklist;

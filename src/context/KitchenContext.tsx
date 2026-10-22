@@ -6,10 +6,12 @@ import {
   INITIAL_INGREDIENTS, 
   INITIAL_MENU_ITEMS, 
   INITIAL_ORDERS,
-  INITIAL_STOCK_LEDGER 
+  INITIAL_STOCK_LEDGER,
+  INITIAL_PURCHASE_ORDERS
 } from '@/lib/mockData'
 import { 
   Brand, 
+  Channel,
   Ingredient, 
   MenuItem, 
   Order, 
@@ -17,6 +19,8 @@ import {
   PackingChecklist,
   StockReasonCode,
   StockLedgerEntry,
+  PurchaseOrder,
+  PurchaseOrderItem,
   UserRole,
   KitchenLanguage
 } from '@/types'
@@ -32,6 +36,7 @@ interface KitchenContextType {
   menuItems: MenuItem[]
   brands: Brand[]
   stockLedger: StockLedgerEntry[]
+  purchaseOrders: PurchaseOrder[]
   isPausedAll: boolean
   pausedPlatforms: { swiggy: boolean; zomato: boolean }
   commissionSettings: CommissionSettings
@@ -51,8 +56,29 @@ interface KitchenContextType {
   handleTogglePlatformStatus: (itemId: string, platform: 'SWIGGY' | 'ZOMATO') => void
   handleToggleEmergencyPause: (target: 'ALL' | 'SWIGGY' | 'ZOMATO') => void
   handleSimulateNewOrder: () => void
+  handleCreateManualOrder: (params: {
+    brandId: string
+    channel: Channel
+    customerName: string
+    customerPhone?: string
+    customerAddress?: string
+    items: { menuItemId: string; quantity: number }[]
+  }) => void
+  handleAddBrand: (brand: Omit<Brand, 'id'>) => void
   handleAddMenuItem: (newItem: Omit<MenuItem, 'id'>) => void
   handleAddIngredient: (newIng: Omit<Ingredient, 'id'>) => void
+  handleCreatePurchaseOrder: (params: {
+    supplierName: string
+    horizon: 'MANUAL' | 'LOW_STOCK' | 'WEEKLY' | 'MONTHLY'
+    items: { ingredientId: string; ingredientName: string; quantity: number; unit: string; costPerUnit: number }[]
+    totalEstimatedCost: number
+    note?: string
+  }) => PurchaseOrder
+  handleReceivePurchaseOrder: (
+    poId: string,
+    reconciledQuantities?: { [ingredientId: string]: number },
+    discrepancyNote?: string
+  ) => void
 }
 
 const KitchenContext = createContext<KitchenContextType | null>(null)
@@ -61,8 +87,9 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
   const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS)
   const [ingredients, setIngredients] = useState<Ingredient[]>(INITIAL_INGREDIENTS)
   const [menuItems, setMenuItems] = useState<MenuItem[]>(INITIAL_MENU_ITEMS)
-  const [brands] = useState<Brand[]>(INITIAL_BRANDS)
+  const [brands, setBrands] = useState<Brand[]>(INITIAL_BRANDS)
   const [stockLedger, setStockLedger] = useState<StockLedgerEntry[]>(INITIAL_STOCK_LEDGER)
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>(INITIAL_PURCHASE_ORDERS)
   const [isPausedAll, setIsPausedAll] = useState(false)
   const [pausedPlatforms, setPausedPlatforms] = useState({ swiggy: false, zomato: false })
   const [commissionSettings, setCommissionSettings] = useState<CommissionSettings>(DEFAULT_COMMISSION_SETTINGS)
@@ -229,7 +256,7 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
   }
 
   const handleCompletePacking = (orderId: string) => {
-    handleUpdateStatus(orderId, 'READY')
+    handleUpdateStatus(orderId, 'DISPATCHED')
   }
 
   const handleAdjustStockWithReason = (
@@ -388,6 +415,101 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     setOrders((prev) => [newOrd, ...prev])
   }
 
+  const handleCreateManualOrder = ({
+    brandId,
+    channel,
+    customerName,
+    customerPhone,
+    customerAddress,
+    items,
+  }: {
+    brandId: string
+    channel: Channel
+    customerName: string
+    customerPhone?: string
+    customerAddress?: string
+    items: { menuItemId: string; quantity: number }[]
+  }) => {
+    const brand = brands.find((b) => b.id === brandId) || brands[0]
+    let itemSubtotal = 0
+    let packagingMaterialCost = 0
+    let ingredientCost = 0
+
+    const orderItems = items.map((it, idx) => {
+      const menuItem = menuItems.find((m) => m.id === it.menuItemId)
+      const price = menuItem ? menuItem.sellingPrice : 150
+      const pkg = menuItem ? menuItem.packagingCost : 15
+      itemSubtotal += price * it.quantity
+      packagingMaterialCost += pkg * it.quantity
+
+      if (menuItem && menuItem.recipe) {
+        menuItem.recipe.forEach((r) => {
+          const ing = ingredients.find((i) => i.id === r.ingredientId)
+          if (ing) {
+            ingredientCost += r.quantity * it.quantity * ing.costPerUnit
+          }
+        })
+      }
+
+      return {
+        id: `oi-m-${Date.now()}-${idx}`,
+        menuItemId: it.menuItemId,
+        name: menuItem?.name || 'Special Dish',
+        station: menuItem?.station || 'ASSEMBLY',
+        secondaryStations: menuItem?.secondaryStations,
+        quantity: it.quantity,
+        price,
+        stationDone: false,
+      }
+    })
+
+    const commRate = channel === 'DIRECT' || channel === 'WALK_IN' ? 0.0 : channel === 'SWIGGY' ? 0.22 : 0.24
+    const fin = calculateOrderFinancials({
+      itemSubtotal,
+      packagingFeeCollected: channel === 'WALK_IN' ? 0 : packagingMaterialCost,
+      customerDiscount: 0,
+      commissionRate: commRate,
+      ingredientCost,
+      packagingMaterialCost,
+      settings: commissionSettings,
+    }).financials
+
+    const prefix = channel === 'WALK_IN' ? 'POS' : channel === 'DIRECT' ? 'DIR' : 'ORD'
+    const newOrd: Order = {
+      id: `ord-man-${Date.now()}`,
+      orderNumber: `#${prefix}-${Math.floor(100 + Math.random() * 900)}`,
+      channel,
+      brandId: brand.id,
+      brandName: brand.name,
+      customerName: customerName.trim() || (channel === 'WALK_IN' ? 'Counter Walk-in' : 'Direct Customer'),
+      customerPhone: customerPhone?.trim() || undefined,
+      customerAddress: customerAddress?.trim() || undefined,
+      status: 'ACCEPTED', // Manual counter orders go straight to cook
+      targetPrepMinutes: 12,
+      createdAt: new Date().toISOString(),
+      acknowledgedAt: new Date().toISOString(),
+      items: orderItems,
+      checklist: {
+        cutlery: false,
+        saucesDips: false,
+        napkins: false,
+        tamperSeal: false,
+        beverageSeparated: false,
+      },
+      financials: fin,
+    }
+
+    setOrders((prev) => [newOrd, ...prev])
+  }
+
+  const handleAddBrand = (brand: Omit<Brand, 'id'>) => {
+    const newBrand: Brand = {
+      ...brand,
+      id: `b-${Date.now()}`,
+    }
+    setBrands((prev) => [...prev, newBrand])
+  }
+
   const handleAddMenuItem = (newItem: Omit<MenuItem, 'id'>) => {
     const itemWithId: MenuItem = {
       ...newItem,
@@ -404,6 +526,81 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     setIngredients((prev) => [ingWithId, ...prev])
   }
 
+  const handleCreatePurchaseOrder = (params: {
+    supplierName: string
+    horizon: 'MANUAL' | 'LOW_STOCK' | 'WEEKLY' | 'MONTHLY'
+    items: { ingredientId: string; ingredientName: string; quantity: number; unit: string; costPerUnit: number }[]
+    totalEstimatedCost: number
+    note?: string
+  }): PurchaseOrder => {
+    const poNumber = `PO-${Math.floor(100 + Math.random() * 900)}`
+    const newPO: PurchaseOrder = {
+      id: `po-${Date.now()}`,
+      poNumber,
+      supplierName: params.supplierName || 'Wholesale Mandi & Vendor',
+      horizon: params.horizon,
+      status: 'PENDING_DELIVERY',
+      items: params.items,
+      totalEstimatedCost: params.totalEstimatedCost,
+      createdAt: new Date().toISOString(),
+      note: params.note,
+    }
+
+    setPurchaseOrders((prev) => [newPO, ...prev])
+    return newPO
+  }
+
+  const handleReceivePurchaseOrder = (
+    poId: string, 
+    reconciledQuantities?: { [ingredientId: string]: number },
+    discrepancyNote?: string
+  ) => {
+    setPurchaseOrders((prev) =>
+      prev.map((po) => {
+        if (po.id !== poId) return po
+
+        let hasDiscrepancy = false
+        let actualTotalCost = 0
+
+        const updatedItems = po.items.map((item) => {
+          const actualQty = reconciledQuantities && reconciledQuantities[item.ingredientId] !== undefined
+            ? Math.max(0, reconciledQuantities[item.ingredientId])
+            : item.quantity
+
+          if (actualQty !== item.quantity) {
+            hasDiscrepancy = true
+          }
+
+          actualTotalCost += actualQty * item.costPerUnit
+
+          // Stock only what actually arrived
+          if (actualQty > 0) {
+            handleAdjustStockWithReason(
+              item.ingredientId,
+              actualQty,
+              'PURCHASE_INFLOW',
+              `Received delivery for ${po.poNumber} (${po.supplierName}) - ${actualQty}/${item.quantity} ${item.unit} received`
+            )
+          }
+
+          return {
+            ...item,
+            receivedQuantity: actualQty,
+          }
+        })
+
+        return {
+          ...po,
+          items: updatedItems,
+          actualCost: actualTotalCost,
+          status: hasDiscrepancy ? ('PARTIALLY_RECEIVED' as const) : ('RECEIVED' as const),
+          receivedAt: new Date().toISOString(),
+          discrepancyNote: discrepancyNote?.trim() || (hasDiscrepancy ? 'Quantity adjusted upon intake' : undefined),
+        }
+      })
+    )
+  }
+
   return (
     <KitchenContext.Provider
       value={{
@@ -412,6 +609,7 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
         menuItems,
         brands,
         stockLedger,
+        purchaseOrders,
         isPausedAll,
         pausedPlatforms,
         commissionSettings,
@@ -431,8 +629,12 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
         handleTogglePlatformStatus,
         handleToggleEmergencyPause,
         handleSimulateNewOrder,
+        handleCreateManualOrder,
+        handleAddBrand,
         handleAddMenuItem,
         handleAddIngredient,
+        handleCreatePurchaseOrder,
+        handleReceivePurchaseOrder,
       }}
     >
       {children}
