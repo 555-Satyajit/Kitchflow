@@ -293,26 +293,6 @@ export function AppHeader() {
 
 
 
-                    {/* Walk-in POS Terminal */}
-                    <div className="p-3 rounded-xl bg-primary/10 border border-primary/30 flex items-center justify-between">
-                      <div className="space-y-0.5">
-                        <span className="font-bold text-xs text-foreground flex items-center gap-1.5">
-                          <UtensilsCrossed className="w-4 h-4 text-primary" />
-                          <span>Walk-in Counter POS</span>
-                        </span>
-                        <p className="text-[10px] text-muted-foreground">
-                          Direct counter billing & phone customer auto-fill.
-                        </p>
-                      </div>
-                      <Link
-                        href="/pos"
-                        onClick={() => setIsMobileMenuOpen(false)}
-                        className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md text-xs font-bold bg-primary hover:bg-primary/90 text-primary-foreground cursor-pointer shadow-2xs"
-                      >
-                        <span>Open</span>
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      </Link>
-                    </div>
 
                     {/* Delivery Boy / Rider Portal */}
                     <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-between">
