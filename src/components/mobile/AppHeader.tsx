@@ -21,7 +21,9 @@ import {
   SlidersHorizontal,
   ChevronRight,
   Truck,
-  Trash2
+  Trash2,
+  Bike,
+  User
 } from 'lucide-react'
 import { useKitchen } from '@/context/KitchenContext'
 import { Badge } from '@/components/ui/badge'
@@ -177,46 +179,14 @@ export function AppHeader() {
 
           {/* Right Action: Emergency Pause + Hamburger Menu Drawer on Mobile */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {/* Desktop Controls (Role Switcher & Language visible on lg:flex) */}
+            {/* Desktop Controls visible on lg:flex */}
             <div className="hidden lg:flex items-center gap-2">
-              {/* Hindi / English Toggle */}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setLanguage(language === 'EN' ? 'HI' : 'EN')}
-                className="text-[11px] h-8 px-2.5 font-mono gap-1 text-foreground/80 hover:text-foreground border-border/80 bg-background/50 hover:bg-muted/80 rounded-lg cursor-pointer"
-                title="Toggle Language (English / हिंदी)"
-              >
-                <Languages className="w-3.5 h-3.5" />
-                <span className="font-bold">{language}</span>
-              </Button>
-
-              {/* Role Switcher Pill */}
-              <div className="flex items-center bg-muted/90 rounded-lg p-0.5 text-xs border border-border/80 shadow-2xs">
-                <button
-                  type="button"
-                  onClick={() => setUserRole('OWNER')}
-                  className={cn(
-                    "px-2.5 py-1 rounded-md transition-all font-bold text-[11px] cursor-pointer",
-                    userRole === 'OWNER' 
-                      ? "bg-background text-foreground shadow-2xs font-extrabold" 
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  Owner
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setUserRole('LINE_COOK')}
-                  className={cn(
-                    "px-2.5 py-1 rounded-md transition-all font-bold text-[11px] cursor-pointer",
-                    userRole === 'LINE_COOK' 
-                      ? "bg-background text-foreground shadow-2xs font-extrabold" 
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  Cook
-                </button>
+              {/* User Profile Chip */}
+              <div className="flex items-center gap-1.5 px-3 h-8 rounded-lg border border-border/80 bg-background/50 text-foreground text-xs font-bold shadow-2xs">
+                <div className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+                  <User className="w-3 h-3 text-primary" />
+                </div>
+                <span>Usalla</span>
               </div>
             </div>
 
@@ -271,77 +241,72 @@ export function AppHeader() {
                       </SheetTitle>
                     </SheetHeader>
 
-                    {/* Active Kitchen Profile & Role */}
-                    <div className="space-y-2">
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground font-mono">
-                        Active Kitchen Role
-                      </span>
-                      <div className="grid grid-cols-2 gap-1.5 bg-muted/70 p-1 rounded-xl border border-border/80">
-                        <button
-                          type="button"
-                          onClick={() => setUserRole('OWNER')}
-                          className={cn(
-                            "py-2 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer",
-                            userRole === 'OWNER'
-                              ? "bg-background text-foreground shadow-xs font-black"
-                              : "text-muted-foreground hover:text-foreground"
-                          )}
-                        >
-                          <UserCheck className="w-3.5 h-3.5" />
-                          <span>Owner</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setUserRole('LINE_COOK')}
-                          className={cn(
-                            "py-2 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer",
-                            userRole === 'LINE_COOK'
-                              ? "bg-background text-foreground shadow-xs font-black"
-                              : "text-muted-foreground hover:text-foreground"
-                          )}
-                        >
-                          <Flame className="w-3.5 h-3.5" />
-                          <span>Line Cook</span>
-                        </button>
-                      </div>
-                    </div>
+                    {/* Premium Executive Profile Card */}
+                    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-card via-muted/40 to-background p-4 border border-border/80 shadow-md">
+                      {/* Subtle accent glow in background */}
+                      <div className="absolute -top-6 -right-6 w-20 h-20 bg-primary/10 rounded-full blur-xl pointer-events-none" />
 
-                    {/* Language Switcher */}
-                    <div className="space-y-2">
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground font-mono">
-                        Kitchen Language
-                      </span>
-                      <div className="grid grid-cols-2 gap-1.5 bg-muted/70 p-1 rounded-xl border border-border/80">
-                        <button
-                          type="button"
-                          onClick={() => setLanguage('EN')}
-                          className={cn(
-                            "py-2 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer",
-                            language === 'EN'
-                              ? "bg-background text-foreground shadow-xs font-black"
-                              : "text-muted-foreground hover:text-foreground"
-                          )}
-                        >
-                          <Globe className="w-3.5 h-3.5" />
-                          <span>English</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setLanguage('HI')}
-                          className={cn(
-                            "py-2 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer",
-                            language === 'HI'
-                              ? "bg-background text-foreground shadow-xs font-black"
-                              : "text-muted-foreground hover:text-foreground"
-                          )}
-                        >
-                          <Languages className="w-3.5 h-3.5" />
-                          <span>हिंदी (Hindi)</span>
-                        </button>
+                      <div className="relative flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          {/* Premium Avatar Ring */}
+                          <div className="relative">
+                            <div className="w-11 h-11 rounded-full bg-gradient-to-tr from-primary/30 to-amber-500/20 border-2 border-primary/40 flex items-center justify-center shadow-inner">
+                              <span className="font-black text-sm text-foreground tracking-wider font-mono">
+                                U
+                              </span>
+                            </div>
+                            {/* Live pulsing online indicator dot */}
+                            <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-background shadow-xs">
+                              <span className="absolute inset-0 rounded-full bg-emerald-400 animate-ping opacity-75" />
+                            </span>
+                          </div>
+
+                          {/* Profile Details */}
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-sm font-black text-foreground tracking-tight">
+                                Usalla
+                              </span>
+                              <span className="text-[9px] font-bold uppercase tracking-wider font-mono px-1.5 py-0.5 rounded-full bg-primary/15 text-primary border border-primary/25">
+                                Admin
+                              </span>
+                            </div>
+                            <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1">
+                              Kitchen Manager
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Status Indicator */}
+                        <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          <span className="text-[10px] font-mono font-bold text-emerald-600">Active</span>
+                        </div>
                       </div>
                     </div>
 
 
+
+                    {/* Delivery Boy / Rider Portal */}
+                    <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <span className="font-bold text-xs text-foreground flex items-center gap-1.5">
+                          <Bike className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                          <span>Delivery Boy Portal</span>
+                        </span>
+                        <p className="text-[10px] text-muted-foreground">
+                          Direct phone delivery & rider dispatch runs.
+                        </p>
+                      </div>
+                      <Link
+                        href="/delivery"
+                        onClick={() => setIsMobileMenuOpen(false)}
+                        className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white cursor-pointer shadow-2xs"
+                      >
+                        <span>Open</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </Link>
+                    </div>
 
                     {/* Supplier Orders & Stock Procurement (PO Manager) */}
                     <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2.5">

@@ -41,6 +41,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  viewportFit: "cover",
   themeColor: "#f97316",
 };
 
@@ -54,7 +55,7 @@ export default function RootLayout({
       <body className="min-h-screen bg-background text-foreground antialiased font-sans">
         <KitchenProvider>
           <AppHeader />
-          <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 pb-24 lg:pb-8">
+          <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-8">
             {children}
           </main>
           <NavigationBar />

@@ -16,6 +16,8 @@ export default function InventoryPage() {
     handleTogglePlatformStatus,
     handleAddMenuItem,
     handleAddIngredient,
+    handleUpdateMenuItemPrice,
+    handleUpdateIngredientCost,
   } = useKitchen()
 
   // Guard: Cook role cannot manage ingredients, cost data, or platform toggles
@@ -59,6 +61,8 @@ export default function InventoryPage() {
       onTogglePlatformStatus={handleTogglePlatformStatus}
       onAddMenuItem={handleAddMenuItem}
       onAddIngredient={handleAddIngredient}
+      onUpdateMenuItemPrice={handleUpdateMenuItemPrice}
+      onUpdateIngredientCost={handleUpdateIngredientCost}
     />
   )
 }

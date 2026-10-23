@@ -44,7 +44,7 @@ export function NavigationBar() {
 
   return (
     /* Visible on mobile, tablets, and iPads. Hidden on laptops & desktops (lg:hidden) */
-    <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-lg border-t border-border/80 px-2 sm:px-4 py-2 safe-area-pb shadow-lg">
+    <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-lg border-t border-border/80 px-2 sm:px-4 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-lg">
       <div className="max-w-xl mx-auto grid grid-cols-5 gap-1">
         {tabs.map((tab) => {
           const Icon = tab.icon
@@ -55,7 +55,7 @@ export function NavigationBar() {
               key={tab.href}
               href={tab.href}
               className={cn(
-                "flex flex-col items-center justify-center py-2 px-1 rounded-xl transition-all relative min-h-[52px]",
+                "flex flex-col items-center justify-center py-1 px-1 rounded-xl transition-all relative min-h-[48px]",
                 isActive 
                   ? "text-primary font-bold bg-primary/10 shadow-2xs" 
                   : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
@@ -67,7 +67,7 @@ export function NavigationBar() {
                   <Badge 
                     variant={isActive ? "default" : "secondary"}
                     className={cn(
-                      "absolute -top-2 -right-3 h-4 min-w-4 px-1 text-[9px] font-mono leading-none flex items-center justify-center rounded-full font-bold",
+                      "absolute -top-1.5 -right-3 h-4 min-w-4 px-1 text-[9px] font-mono leading-none flex items-center justify-center rounded-full font-bold",
                       isActive ? "bg-primary text-primary-foreground" : "bg-muted-foreground/20 text-foreground"
                     )}
                   >
@@ -75,7 +75,7 @@ export function NavigationBar() {
                   </Badge>
                 )}
               </div>
-              <span className="text-[11px] mt-1 tracking-tight leading-none font-medium">{tab.label}</span>
+              <span className="text-[10px] mt-1 tracking-tight leading-none font-medium">{tab.label}</span>
             </Link>
           )
         })}

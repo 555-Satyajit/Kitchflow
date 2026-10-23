@@ -25,7 +25,11 @@ import {
   Store,
   ShoppingCart,
   Download,
-  FileSpreadsheet
+  FileSpreadsheet,
+  LayoutList,
+  LayoutGrid,
+  Search,
+  Minus
 } from 'lucide-react'
 import { estimateRecipeBOM, AIBOMSuggestion } from '@/lib/aiBOMEstimator'
 import { Card } from '@/components/ui/card'
@@ -62,6 +66,8 @@ interface InventoryViewProps {
   onTogglePlatformStatus: (itemId: string, platform: 'SWIGGY' | 'ZOMATO') => void
   onAddMenuItem: (newItem: Omit<MenuItem, 'id'>) => void
   onAddIngredient: (newIng: Omit<Ingredient, 'id'>) => void
+  onUpdateMenuItemPrice?: (menuItemId: string, newSellingPrice: number, newPackagingCost?: number) => void
+  onUpdateIngredientCost?: (ingredientId: string, newCostPerUnit: number) => void
 }
 
 export function InventoryView({
@@ -74,10 +80,14 @@ export function InventoryView({
   onTogglePlatformStatus,
   onAddMenuItem,
   onAddIngredient,
+  onUpdateMenuItemPrice,
+  onUpdateIngredientCost,
 }: InventoryViewProps) {
   const lowStockItems = ingredients.filter((i) => i.currentStock <= i.minThreshold)
   const [activeTab, setActiveTab] = useState<'STOCK' | 'MENU' | 'LEDGER'>('STOCK')
   const [selectedBrandFilter, setSelectedBrandFilter] = useState<string>('ALL')
+  const [stockViewMode, setStockViewMode] = useState<'TABLE' | 'CARDS'>('TABLE')
+  const [ingredientSearch, setIngredientSearch] = useState<string>('')
   const [isPurchaseOrderOpen, setIsPurchaseOrderOpen] = useState(false)
 
   // Stock Adjustment Dialog State
@@ -85,6 +95,15 @@ export function InventoryView({
   const [adjustDelta, setAdjustDelta] = useState<string>('-10')
   const [adjustReason, setAdjustReason] = useState<StockReasonCode>('WASTAGE_SPOILAGE')
   const [adjustNote, setAdjustNote] = useState<string>('')
+
+  // Edit Ingredient Cost Dialog State
+  const [editingCostIng, setEditingCostIng] = useState<Ingredient | null>(null)
+  const [newCostInput, setNewCostInput] = useState<string>('')
+
+  // Edit Dish Selling Price Dialog State
+  const [editingPriceDish, setEditingPriceDish] = useState<MenuItem | null>(null)
+  const [newSellingPriceInput, setNewSellingPriceInput] = useState<string>('')
+  const [newPkgCostInput, setNewPkgCostInput] = useState<string>('')
 
   // Dialog State: Add Menu Item
   const [isMenuItemDialogOpen, setIsMenuItemDialogOpen] = useState(false)
@@ -1121,179 +1140,329 @@ export function InventoryView({
           <>
 
       {/* Tab 1: Raw Ingredients */}
-      {activeTab === 'STOCK' && (
-        <div className="space-y-4">
-          {/* Low Stock Warning Alert Banner */}
-          {lowStockItems.length > 0 && (
-            <div className="flex items-center justify-between p-3.5 rounded-xl border-2 border-red-500/60 bg-red-50/80 dark:bg-red-950/40 text-red-700 dark:text-red-300 text-xs shadow-xs">
-              <div className="flex items-center space-x-2.5">
-                <AlertTriangle className="w-5 h-5 shrink-0 text-red-600 animate-bounce" />
-                <div>
-                  <span className="font-extrabold text-sm block">
-                    {lowStockItems.length} {lowStockItems.length === 1 ? 'SKU' : 'SKUs'} Below Safe Minimum Threshold
-                  </span>
-                  <span className="font-medium text-xs opacity-90">
-                    Items requiring immediate replenishment have been prioritized at the top of the stockroom.
+      {activeTab === 'STOCK' && (() => {
+        // Filter by search query if any
+        const filteredIngredients = displayedIngredients.filter((ing) => {
+          if (!ingredientSearch.trim()) return true
+          const q = ingredientSearch.toLowerCase()
+          const brandName = brands.find(b => b.id === ing.brandId)?.name.toLowerCase() || ''
+          return ing.name.toLowerCase().includes(q) || brandName.includes(q) || ing.unit.toLowerCase().includes(q)
+        })
+
+        const sortedIngredients = [...filteredIngredients].sort((a, b) => {
+          const aUrgency = a.currentStock <= 0 ? 0 : a.currentStock <= a.minThreshold ? 1 : 2
+          const bUrgency = b.currentStock <= 0 ? 0 : b.currentStock <= b.minThreshold ? 1 : 2
+          return aUrgency - bUrgency
+        })
+
+        return (
+          <div className="space-y-3.5">
+            {/* Low Stock Warning Alert Banner (Compact) */}
+            {lowStockItems.length > 0 && (
+              <div className="flex items-center justify-between p-3 rounded-xl border border-red-500/40 bg-red-50/60 dark:bg-red-950/30 text-red-700 dark:text-red-300 text-xs">
+                <div className="flex items-center space-x-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-red-600" />
+                  <span className="font-semibold text-xs">
+                    {lowStockItems.length} {lowStockItems.length === 1 ? 'item' : 'items'} running low or depleted.
                   </span>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setIsPurchaseOrderOpen(true)}
+                  className="text-[11px] font-bold text-red-700 dark:text-red-300 hover:underline cursor-pointer"
+                >
+                  Create PO &rarr;
+                </button>
               </div>
-              <span className="text-xs font-bold font-mono px-2.5 py-1 rounded-md bg-red-600 text-white shrink-0">
-                Action Needed
-              </span>
-            </div>
-          )}
+            )}
 
-          {/* Sorted Ingredient Cards (Zero & Low items first) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-            {[...displayedIngredients]
-              .sort((a, b) => {
-                const aUrgency = a.currentStock <= 0 ? 0 : a.currentStock <= a.minThreshold ? 1 : 2
-                const bUrgency = b.currentStock <= 0 ? 0 : b.currentStock <= b.minThreshold ? 1 : 2
-                return aUrgency - bUrgency
-              })
-              .map((ing) => {
-                const isZero = ing.currentStock <= 0
-                const isLow = ing.currentStock <= ing.minThreshold
-                const minVal = Math.max(1, ing.minThreshold)
-                const pctOfMin = Math.round((ing.currentStock / minVal) * 100)
-                const barWidth = Math.min(100, pctOfMin)
-                const presets = getUnitPresets(ing.unit)
+            {/* View Mode Switch & Search Filter Bar */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-0.5">
+              {/* Search Bar */}
+              <div className="relative flex-1 max-w-sm">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  type="text"
+                  placeholder="Search ingredient, brand, or SKU..."
+                  value={ingredientSearch}
+                  onChange={(e) => setIngredientSearch(e.target.value)}
+                  className="h-8 pl-8 text-xs bg-card"
+                />
+              </div>
 
-                return (
-                  <Card
-                    key={ing.id}
+              {/* View Toggle: Table vs Cards */}
+              <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                <span className="text-[11px] text-muted-foreground font-mono mr-1">
+                  {sortedIngredients.length} items
+                </span>
+                <div className="flex items-center bg-muted/60 p-0.5 rounded-lg border border-border/80">
+                  <button
+                    type="button"
+                    onClick={() => setStockViewMode('TABLE')}
                     className={cn(
-                      "p-4 flex flex-col justify-between shadow-2xs border transition-all rounded-xl",
-                      isZero
-                        ? "border-red-500/80 bg-red-500/5 dark:bg-red-950/20"
-                        : isLow
-                        ? "border-amber-500/80 bg-amber-500/5 dark:bg-amber-950/20"
-                        : "border-border/80 bg-card hover:border-primary/40 hover:shadow-xs"
+                      "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer",
+                      stockViewMode === 'TABLE'
+                        ? "bg-background text-foreground shadow-2xs"
+                        : "text-muted-foreground hover:text-foreground"
                     )}
                   >
-                    <div className="space-y-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <h4 className="text-sm font-bold text-foreground leading-tight truncate">
+                    <LayoutList className="w-3.5 h-3.5" />
+                    <span>Table</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStockViewMode('CARDS')}
+                    className={cn(
+                      "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer",
+                      stockViewMode === 'CARDS'
+                        ? "bg-background text-foreground shadow-2xs"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    <LayoutGrid className="w-3.5 h-3.5" />
+                    <span>Cards</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Mode 1: Clean Minimal Table View */}
+            {stockViewMode === 'TABLE' && (
+              <div className="rounded-xl border border-border bg-card overflow-hidden shadow-2xs">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs min-w-[700px]">
+                    <thead className="bg-muted/40 border-b border-border/80 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider font-mono">
+                      <tr>
+                        <th className="py-2.5 px-3.5 whitespace-nowrap">Ingredient Name</th>
+                        <th className="py-2.5 px-3 whitespace-nowrap">Brand</th>
+                        <th className="py-2.5 px-3 text-right whitespace-nowrap">In Stock</th>
+                        <th className="py-2.5 px-3 text-right whitespace-nowrap">Min Buffer</th>
+                        <th className="py-2.5 px-3 text-center whitespace-nowrap">Status</th>
+                        {userRole === 'OWNER' && (
+                          <th className="py-2.5 px-3 text-right whitespace-nowrap">Unit Cost</th>
+                        )}
+                        <th className="py-2.5 px-3.5 text-right whitespace-nowrap">Quick Stock Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/60">
+                      {sortedIngredients.length === 0 ? (
+                        <tr>
+                          <td colSpan={userRole === 'OWNER' ? 7 : 6} className="py-8 text-center text-muted-foreground text-xs">
+                            No ingredients found matching your search.
+                          </td>
+                        </tr>
+                      ) : (
+                        sortedIngredients.map((ing) => {
+                          const isZero = ing.currentStock <= 0
+                          const isLow = ing.currentStock <= ing.minThreshold
+                          const brand = brands.find(b => b.id === ing.brandId)
+
+                          return (
+                            <tr
+                              key={ing.id}
+                              className={cn(
+                                "hover:bg-muted/30 transition-colors",
+                                isZero && "bg-red-500/5",
+                                !isZero && isLow && "bg-amber-500/5"
+                              )}
+                            >
+                              {/* Name */}
+                              <td className="py-3 px-3.5 font-bold text-foreground whitespace-nowrap">
+                                <span className="text-sm">{ing.name}</span>
+                              </td>
+
+                              {/* Brand */}
+                              <td className="py-3 px-3 whitespace-nowrap">
+                                {brand ? (
+                                  <span className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground">
+                                    <span
+                                      className="w-2 h-2 rounded-full shrink-0"
+                                      style={{ backgroundColor: brand.color }}
+                                    />
+                                    <span>{brand.name}</span>
+                                  </span>
+                                ) : (
+                                  <span className="text-muted-foreground text-xs">—</span>
+                                )}
+                              </td>
+
+                              {/* In Stock */}
+                              <td className="py-3 px-3 text-right font-mono font-bold text-sm whitespace-nowrap">
+                                <span
+                                  className={cn(
+                                    isZero ? "text-red-600 font-extrabold" : isLow ? "text-amber-600 font-bold" : "text-foreground"
+                                  )}
+                                >
+                                  {ing.currentStock}
+                                </span>
+                                <span className="text-xs text-muted-foreground font-normal ml-1">
+                                  {ing.unit}
+                                </span>
+                              </td>
+
+                              {/* Min Buffer */}
+                              <td className="py-3 px-3 text-right font-mono text-xs text-muted-foreground whitespace-nowrap">
+                                {ing.minThreshold} {ing.unit}
+                              </td>
+
+                              {/* Status Badge */}
+                              <td className="py-3 px-3 text-center whitespace-nowrap">
+                                {isZero ? (
+                                  <Badge className="bg-red-500/15 text-red-700 dark:text-red-400 border border-red-500/30 text-[10px] font-mono px-2 py-0.5">
+                                    Out of Stock (86)
+                                  </Badge>
+                                ) : isLow ? (
+                                  <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 text-[10px] font-mono px-2 py-0.5">
+                                    Low Stock
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="outline" className="text-emerald-700 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/10 text-[10px] font-mono px-2 py-0.5">
+                                    Normal
+                                  </Badge>
+                                )}
+                              </td>
+
+                              {/* Unit Cost (Owner only with Quick Edit) */}
+                              {userRole === 'OWNER' && (
+                                <td className="py-3 px-3 text-right whitespace-nowrap">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingCostIng(ing)
+                                      setNewCostInput(ing.costPerUnit.toString())
+                                    }}
+                                    className="inline-flex items-center gap-1 font-mono text-xs text-foreground font-medium hover:text-primary hover:underline cursor-pointer group"
+                                    title="Click to adjust unit cost"
+                                  >
+                                    <span>{formatCurrency(ing.costPerUnit)}</span>
+                                    <span className="text-[10px] text-muted-foreground">/{ing.unit}</span>
+                                    <Edit2 className="w-3 h-3 text-muted-foreground group-hover:text-primary transition-colors opacity-70 ml-0.5" />
+                                  </button>
+                                </td>
+                              )}
+
+                              {/* Simple Single Action Button */}
+                              <td className="py-3 px-3.5 text-right whitespace-nowrap">
+                                <div className="inline-flex items-center gap-1.5">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setAdjustingIng(ing)
+                                      setAdjustDelta('-1')
+                                      setAdjustReason('WASTAGE_SPOILAGE')
+                                    }}
+                                    className="h-7 px-2.5 text-xs font-semibold gap-1 bg-background hover:bg-muted border-border cursor-pointer"
+                                  >
+                                    <span>Adjust Stock</span>
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Mode 2: Simplified Minimal Cards */}
+            {stockViewMode === 'CARDS' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {sortedIngredients.map((ing) => {
+                  const isZero = ing.currentStock <= 0
+                  const isLow = ing.currentStock <= ing.minThreshold
+                  const brand = brands.find(b => b.id === ing.brandId)
+
+                  return (
+                    <Card
+                      key={ing.id}
+                      className={cn(
+                        "p-3.5 flex flex-col justify-between border rounded-xl transition-all shadow-2xs",
+                        isZero
+                          ? "border-red-500/50 bg-red-500/5"
+                          : isLow
+                          ? "border-amber-500/50 bg-amber-500/5"
+                          : "border-border bg-card hover:border-primary/40"
+                      )}
+                    >
+                      <div className="space-y-2">
+                        {/* Title and Brand */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <h4 className="text-sm font-bold text-foreground leading-tight">
                               {ing.name}
                             </h4>
-                            {ing.brandId && (
-                              <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 shrink-0 flex items-center gap-1">
-                                <span 
-                                  className="w-1.5 h-1.5 rounded-full" 
-                                  style={{ backgroundColor: brands.find(b => b.id === ing.brandId)?.color || '#f97316' }} 
-                                />
-                                <span>{brands.find(b => b.id === ing.brandId)?.name}</span>
-                              </span>
-                            )}
-                            {isZero && (
-                              <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-red-600 text-white shrink-0">
-                                Depleted (86)
-                              </span>
-                            )}
-                            {!isZero && isLow && (
-                              <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-500 text-amber-950 shrink-0">
-                                Low Stock
-                              </span>
+                            {brand && (
+                              <p className="text-[11px] text-muted-foreground flex items-center gap-1 mt-0.5">
+                                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: brand.color }} />
+                                <span>{brand.name}</span>
+                              </p>
                             )}
                           </div>
-                          {userRole === 'OWNER' ? (
-                            <p className="text-xs text-muted-foreground mt-0.5 font-medium">
-                              Cost: <span className="font-mono font-semibold text-foreground">{formatCurrency(ing.costPerUnit)}</span> / {ing.unit}
-                            </p>
+                          {isZero ? (
+                            <Badge className="bg-red-500/15 text-red-700 dark:text-red-400 border border-red-500/30 text-[10px] font-mono shrink-0">
+                              Out
+                            </Badge>
+                          ) : isLow ? (
+                            <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 text-[10px] font-mono shrink-0">
+                              Low
+                            </Badge>
                           ) : (
-                            <p className="text-xs text-muted-foreground mt-0.5 font-medium">
-                              Stock SKU • {ing.unit}
-                            </p>
+                            <Badge variant="outline" className="text-emerald-700 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/10 text-[10px] font-mono shrink-0">
+                              Normal
+                            </Badge>
                           )}
                         </div>
 
-                        <div className="text-right shrink-0">
-                          <div className="flex items-baseline justify-end gap-1 font-mono">
-                            <span
-                              className={cn(
-                                "text-xl font-extrabold tracking-tight",
-                                isZero
-                                  ? "text-red-600"
-                                  : isLow
-                                  ? "text-amber-600 dark:text-amber-400"
-                                  : "text-foreground"
-                              )}
-                            >
+                        {/* Stock Numbers */}
+                        <div className="flex items-baseline justify-between pt-1 font-mono">
+                          <span className="text-xs text-muted-foreground font-sans">Current:</span>
+                          <div>
+                            <span className={cn("text-lg font-bold", isZero ? "text-red-600" : isLow ? "text-amber-600" : "text-foreground")}>
                               {ing.currentStock}
                             </span>
-                            <span className="text-xs font-semibold text-muted-foreground">
+                            <span className="text-xs text-muted-foreground ml-1">
                               / min {ing.minThreshold} {ing.unit}
                             </span>
                           </div>
-                          <p className={cn(
-                            "text-[11px] font-bold font-mono",
-                            isZero ? "text-red-600" : isLow ? "text-amber-600" : "text-emerald-600"
-                          )}>
-                            {pctOfMin}% {isLow ? 'OF MIN BUFFER' : 'SAFE'}
-                          </p>
                         </div>
+
+                        {userRole === 'OWNER' && (
+                          <div className="flex items-center justify-between text-xs text-muted-foreground pt-0.5">
+                            <span>Cost:</span>
+                            <span className="font-mono text-foreground font-semibold">
+                              {formatCurrency(ing.costPerUnit)} / {ing.unit}
+                            </span>
+                          </div>
+                        )}
                       </div>
 
-                      {/* Stock Level Visual Progress Bar Against Minimum Threshold */}
-                      <div className="space-y-1">
-                        <div className="h-2 w-full bg-muted/80 rounded-full overflow-hidden border border-border/50">
-                          <div
-                            className={cn(
-                              "h-full transition-all duration-300 rounded-full",
-                              isZero
-                                ? "bg-red-600 w-full"
-                                : isLow
-                                ? "bg-amber-500"
-                                : "bg-emerald-500"
-                            )}
-                            style={{ width: `${Math.max(4, barWidth)}%` }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Unit-Aware Presets & Reason Modal Trigger */}
-                    <div className="pt-3 border-t border-border/60 space-y-2 mt-3">
-                      <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono">
-                        <span className="font-semibold uppercase tracking-wider text-[9px]">Quick {ing.unit} Adjust:</span>
-                        <button
-                          type="button"
+                      {/* Single Action Button */}
+                      <div className="pt-3 border-t border-border/60 mt-2.5">
+                        <Button
+                          size="sm"
+                          variant="outline"
                           onClick={() => {
                             setAdjustingIng(ing)
                             setAdjustDelta('-1')
                             setAdjustReason('WASTAGE_SPOILAGE')
                           }}
-                          className="text-primary hover:underline cursor-pointer font-bold"
+                          className="w-full h-8 text-xs font-semibold bg-background hover:bg-muted border-border cursor-pointer"
                         >
-                          Custom + Reason Code
-                        </button>
+                          Adjust Stock Level
+                        </Button>
                       </div>
-
-                      <div className="grid grid-cols-4 gap-1.5">
-                        {presets.map((p) => (
-                          <Button
-                            key={p.label}
-                            size="sm"
-                            variant={p.delta < 0 ? "outline" : "secondary"}
-                            onClick={() => onAdjustStockWithReason(ing.id, p.delta, p.reason)}
-                            className={cn(
-                              "text-xs h-8 px-1 font-mono font-semibold transition-transform active:scale-95",
-                              p.delta < 0 ? "text-destructive hover:bg-destructive/10 border-destructive/20" : "hover:bg-muted text-foreground"
-                            )}
-                          >
-                            {p.label}
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-                  </Card>
-              )
-            })}
+                    </Card>
+                  )
+                })}
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* Tab 2: Menu Items & Per-Platform Swiggy / Zomato Controls */}
       {activeTab === 'MENU' && (
@@ -1356,12 +1525,37 @@ export function InventoryView({
                       </div>
 
                       <div className="text-right shrink-0">
-                        <span className="text-sm font-bold text-foreground font-mono">
-                          {formatCurrency(item.sellingPrice)}
-                        </span>
-                        <p className="text-[10px] text-muted-foreground font-mono">
-                          Pkg: {formatCurrency(item.packagingCost)}
-                        </p>
+                        {userRole === 'OWNER' ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingPriceDish(item)
+                              setNewSellingPriceInput(item.sellingPrice.toString())
+                              setNewPkgCostInput(item.packagingCost.toString())
+                            }}
+                            className="text-right group cursor-pointer block hover:opacity-80"
+                            title="Click to edit selling price & packaging fee"
+                          >
+                            <div className="flex items-center justify-end gap-1">
+                              <span className="text-sm font-bold text-foreground font-mono group-hover:text-primary transition-colors">
+                                {formatCurrency(item.sellingPrice)}
+                              </span>
+                              <Edit2 className="w-3 h-3 text-muted-foreground group-hover:text-primary transition-colors opacity-70" />
+                            </div>
+                            <p className="text-[10px] text-muted-foreground font-mono">
+                              Pkg: {formatCurrency(item.packagingCost)}
+                            </p>
+                          </button>
+                        ) : (
+                          <>
+                            <span className="text-sm font-bold text-foreground font-mono">
+                              {formatCurrency(item.sellingPrice)}
+                            </span>
+                            <p className="text-[10px] text-muted-foreground font-mono">
+                              Pkg: {formatCurrency(item.packagingCost)}
+                            </p>
+                          </>
+                        )}
                       </div>
                     </div>
 
@@ -1641,6 +1835,130 @@ export function InventoryView({
           })
         }}
       />
+
+      {/* Edit Ingredient Unit Cost Modal */}
+      <Dialog open={Boolean(editingCostIng)} onOpenChange={(open) => !open && setEditingCostIng(null)}>
+        <DialogContent className="sm:max-w-md">
+          {editingCostIng && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                const cost = parseFloat(newCostInput)
+                if (!isNaN(cost) && onUpdateIngredientCost) {
+                  onUpdateIngredientCost(editingCostIng.id, cost)
+                }
+                setEditingCostIng(null)
+              }}
+            >
+              <DialogHeader>
+                <DialogTitle className="text-base font-bold">
+                  Update Ingredient Cost: {editingCostIng.name}
+                </DialogTitle>
+              </DialogHeader>
+
+              <div className="space-y-3 py-4 text-xs">
+                <p className="text-muted-foreground">
+                  Update your raw supplier purchase cost. This cost automatically recalculates dish margin and recipe food cost across your cloud kitchen.
+                </p>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-unit-cost">Cost per {editingCostIng.unit} (₹)</Label>
+                  <Input
+                    id="edit-unit-cost"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.15"
+                    value={newCostInput}
+                    onChange={(e) => setNewCostInput(e.target.value)}
+                    required
+                    className="font-mono text-sm"
+                  />
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button type="button" variant="outline" size="sm" onClick={() => setEditingCostIng(null)}>
+                  Cancel
+                </Button>
+                <Button type="submit" size="sm">
+                  Save Cost
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Dish Selling Price & Packaging Cost Modal */}
+      <Dialog open={Boolean(editingPriceDish)} onOpenChange={(open) => !open && setEditingPriceDish(null)}>
+        <DialogContent className="sm:max-w-md">
+          {editingPriceDish && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                const price = parseFloat(newSellingPriceInput)
+                const pkg = parseFloat(newPkgCostInput)
+                if (!isNaN(price) && onUpdateMenuItemPrice) {
+                  onUpdateMenuItemPrice(editingPriceDish.id, price, isNaN(pkg) ? undefined : pkg)
+                }
+                setEditingPriceDish(null)
+              }}
+            >
+              <DialogHeader>
+                <DialogTitle className="text-base font-bold">
+                  Adjust Selling Price: {editingPriceDish.name}
+                </DialogTitle>
+              </DialogHeader>
+
+              <div className="space-y-3 py-4 text-xs">
+                <p className="text-muted-foreground">
+                  Adjust your customer menu selling price and delivery packaging fee. Changes reflect across live orders and financial margin reports.
+                </p>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-dish-price">Menu Selling Price (₹)</Label>
+                  <Input
+                    id="edit-dish-price"
+                    type="number"
+                    step="1"
+                    min="0"
+                    placeholder="249"
+                    value={newSellingPriceInput}
+                    onChange={(e) => setNewSellingPriceInput(e.target.value)}
+                    required
+                    className="font-mono text-sm"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-pkg-cost">Packaging Material Fee (₹)</Label>
+                  <Input
+                    id="edit-pkg-cost"
+                    type="number"
+                    step="1"
+                    min="0"
+                    placeholder="15"
+                    value={newPkgCostInput}
+                    onChange={(e) => setNewPkgCostInput(e.target.value)}
+                    required
+                    className="font-mono text-sm"
+                  />
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button type="button" variant="outline" size="sm" onClick={() => setEditingPriceDish(null)}>
+                  Cancel
+                </Button>
+                <Button type="submit" size="sm">
+                  Save Price
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

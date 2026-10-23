@@ -79,6 +79,8 @@ interface KitchenContextType {
     reconciledQuantities?: { [ingredientId: string]: number },
     discrepancyNote?: string
   ) => void
+  handleUpdateMenuItemPrice: (menuItemId: string, newSellingPrice: number, newPackagingCost?: number) => void
+  handleUpdateIngredientCost: (ingredientId: string, newCostPerUnit: number) => void
 }
 
 const KitchenContext = createContext<KitchenContextType | null>(null)
@@ -601,6 +603,30 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     )
   }
 
+  const handleUpdateMenuItemPrice = (menuItemId: string, newSellingPrice: number, newPackagingCost?: number) => {
+    setMenuItems((prev) =>
+      prev.map((item) =>
+        item.id === menuItemId
+          ? {
+              ...item,
+              sellingPrice: Math.max(0, newSellingPrice),
+              packagingCost: newPackagingCost !== undefined ? Math.max(0, newPackagingCost) : item.packagingCost,
+            }
+          : item
+      )
+    )
+  }
+
+  const handleUpdateIngredientCost = (ingredientId: string, newCostPerUnit: number) => {
+    setIngredients((prev) =>
+      prev.map((ing) =>
+        ing.id === ingredientId
+          ? { ...ing, costPerUnit: Math.max(0, newCostPerUnit) }
+          : ing
+      )
+    )
+  }
+
   return (
     <KitchenContext.Provider
       value={{
@@ -635,6 +661,8 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
         handleAddIngredient,
         handleCreatePurchaseOrder,
         handleReceivePurchaseOrder,
+        handleUpdateMenuItemPrice,
+        handleUpdateIngredientCost,
       }}
     >
       {children}

@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
+import Link from 'next/link'
 import { Order, OrderStatus } from '@/types'
 import { formatCurrency, formatDuration, formatStationName, cn } from '@/lib/utils'
 import { Plus, Info, ShoppingBag, Clock, ArrowRight, CheckCircle2 } from 'lucide-react'
@@ -99,9 +100,8 @@ export function OrdersQueueView({
         </div>
 
         <div className="flex items-center gap-2">
-          {onOpenManualOrder && (
+          <Link href="/pos">
             <Button
-              onClick={onOpenManualOrder}
               variant="default"
               size="sm"
               className="text-xs h-9 gap-1.5 font-bold shadow-xs bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
@@ -109,7 +109,7 @@ export function OrdersQueueView({
               <ShoppingBag className="w-4 h-4" />
               <span>+ New Order (POS)</span>
             </Button>
-          )}
+          </Link>
 
           <Button
             onClick={onSimulateNewOrder}
