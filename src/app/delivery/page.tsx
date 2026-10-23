@@ -251,7 +251,7 @@ export default function DeliveryPortalPage() {
                     Items ({order.items.reduce((s, i) => s + i.quantity, 0)})
                   </span>
                   <p className="line-clamp-2">
-                    {order.items.map((it) => `${it.quantity}x ${it.menuItemName}`).join(', ')}
+                    {order.items.map((it) => `${it.quantity}x ${it.name}`).join(', ')}
                   </p>
                 </div>
 
