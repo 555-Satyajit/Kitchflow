@@ -1,6 +1,7 @@
 "use client"
 
 import { useRouter } from "next/navigation"
+import Image from "next/image"
 import { cn } from "@/lib/utils"
 
 import { Button } from "@/components/ui/button"
@@ -32,7 +33,18 @@ export function LoginForm({
           <form className="p-6 md:p-8" onSubmit={handleSubmit}>
             <FieldGroup>
               <div className="flex flex-col items-center gap-2 text-center">
-                <h1 className="text-2xl font-bold">Welcome to KitchFlow</h1>
+                <div className="relative h-12 w-auto flex items-center justify-center mb-1">
+                  <Image 
+                    src="/logo.png?v=2" 
+                    alt="KitchFlow" 
+                    width={180} 
+                    height={48} 
+                    className="h-10 w-auto object-contain"
+                    priority
+                    unoptimized
+                  />
+                </div>
+                <h1 className="text-2xl font-bold">Welcome back</h1>
                 <p className="text-balance text-muted-foreground">
                   Login to your cloud kitchen dashboard
                 </p>

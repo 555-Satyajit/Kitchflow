@@ -4,6 +4,7 @@ import "./globals.css";
 import { KitchenProvider } from "@/context/KitchenContext";
 import { AppHeader } from "@/components/mobile/AppHeader";
 import { NavigationBar } from "@/components/mobile/NavigationBar";
+import { ServiceWorkerRegister } from "@/components/pwa/ServiceWorkerRegister";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -20,6 +21,19 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "KitchFlow — Cloud Kitchen Operating System",
   description: "Real-time operating system for multi-brand Indian cloud kitchens",
+  manifest: "/manifest.json",
+  icons: {
+    icon: "/logo.png",
+    apple: "/logo.png",
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "KitchFlow",
+  },
+  formatDetection: {
+    telephone: false,
+  },
 };
 
 export const viewport: Viewport = {
@@ -27,6 +41,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  themeColor: "#f97316",
 };
 
 export default function RootLayout({
@@ -43,6 +58,7 @@ export default function RootLayout({
             {children}
           </main>
           <NavigationBar />
+          <ServiceWorkerRegister />
         </KitchenProvider>
       </body>
     </html>

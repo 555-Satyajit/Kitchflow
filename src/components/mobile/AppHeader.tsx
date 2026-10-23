@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { 
   ClipboardList, 
@@ -119,25 +120,23 @@ export function AppHeader() {
       <header className="sticky top-0 z-40 bg-background/90 backdrop-blur-md border-b border-border/80 safe-area-pt">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 h-14 flex items-center justify-between gap-2 sm:gap-4">
           
-          {/* Brand Logo & Details */}
+          {/* Brand Logo */}
           <div className="flex items-center space-x-2 shrink-0">
             <Link href="/orders" className="flex items-center space-x-2">
-              <div className="w-8 h-8 rounded-lg bg-primary text-primary-foreground flex items-center justify-center font-bold text-sm shadow-xs shrink-0">
-                <UtensilsCrossed className="w-4 h-4" />
+              <div className="relative h-9 w-auto flex items-center">
+                <Image 
+                  src="/logo.png?v=2" 
+                  alt="KitchFlow" 
+                  width={140} 
+                  height={36} 
+                  className="h-8 sm:h-9 w-auto object-contain"
+                  priority
+                  unoptimized
+                />
               </div>
-              <div className="flex flex-col">
-                <div className="flex items-center gap-1.5 leading-none">
-                  <span className="text-sm font-bold text-foreground tracking-tight">
-                    {t.appName}
-                  </span>
-                  <span className="hidden xs:inline-flex text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground border border-border/60">
-                    {brands.length} Brands
-                  </span>
-                </div>
-                <span className="text-[10px] text-muted-foreground mt-0.5 hidden md:inline-block font-medium">
-                  {t.subTitle}
-                </span>
-              </div>
+              <span className="hidden xs:inline-flex text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground border border-border/60 ml-1">
+                {brands.length} Brands
+              </span>
             </Link>
           </div>
 
@@ -258,11 +257,17 @@ export function AppHeader() {
                 <SheetContent side="right" className="w-[300px] p-5 flex flex-col justify-between">
                   <div className="space-y-6">
                     <SheetHeader className="p-0 text-left border-b border-border/70 pb-3">
-                      <SheetTitle className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center font-bold text-xs shadow-xs">
-                          <UtensilsCrossed className="w-3.5 h-3.5" />
+                      <SheetTitle className="flex items-center">
+                        <div className="relative h-8 w-auto flex items-center">
+                          <Image 
+                            src="/logo.png?v=2" 
+                            alt="KitchFlow" 
+                            width={130} 
+                            height={32} 
+                            className="h-7 w-auto object-contain"
+                            unoptimized
+                          />
                         </div>
-                        <span className="font-extrabold text-base tracking-tight">{t.appName}</span>
                       </SheetTitle>
                     </SheetHeader>
 

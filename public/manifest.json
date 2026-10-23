@@ -1,0 +1,54 @@
+{
+  "name": "KitchFlow — Cloud Kitchen Operating System",
+  "short_name": "KitchFlow",
+  "description": "Real-time operating system for multi-brand Indian cloud kitchens",
+  "start_url": "/orders",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#ffffff",
+  "theme_color": "#f97316",
+  "categories": ["business", "food", "productivity"],
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Live Order Queue",
+      "short_name": "Live Orders",
+      "description": "View live dispatch queue and active delivery tickets",
+      "url": "/orders",
+      "icons": [{ "src": "/logo.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Kitchen Display (KDS)",
+      "short_name": "KDS Cook",
+      "description": "Cook station station routing tickets",
+      "url": "/kds",
+      "icons": [{ "src": "/logo.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Inventory & Stockroom",
+      "short_name": "Inventory",
+      "description": "Raw SKU levels and supplier indents",
+      "url": "/inventory",
+      "icons": [{ "src": "/logo.png", "sizes": "192x192" }]
+    }
+  ]
+}
