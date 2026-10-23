@@ -181,13 +181,18 @@ export function AppHeader() {
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* Desktop Controls visible on lg:flex */}
             <div className="hidden lg:flex items-center gap-2">
-              {/* User Profile Chip */}
-              <div className="flex items-center gap-1.5 px-3 h-8 rounded-lg border border-border/80 bg-background/50 text-foreground text-xs font-bold shadow-2xs">
-                <div className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+              {/* User Profile Chip (clicks to open drawer) */}
+              <button
+                type="button"
+                onClick={() => setIsMobileMenuOpen(true)}
+                className="flex items-center gap-1.5 px-3 h-8 sm:h-9 rounded-lg border border-border/80 bg-background/50 hover:bg-muted text-foreground text-xs font-bold shadow-2xs cursor-pointer transition-colors"
+                title="Open Management Drawer"
+              >
+                <div className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center font-mono">
                   <User className="w-3 h-3 text-primary" />
                 </div>
                 <span>Usalla</span>
-              </div>
+              </button>
             </div>
 
             {/* High-Impact Emergency Pause Button (Compact on mobile, full on desktop) */}
@@ -211,17 +216,18 @@ export function AppHeader() {
               </span>
             </Button>
 
-            {/* Mobile Hamburger Menu Drawer */}
-            <div className="lg:hidden">
+            {/* Menu Drawer (Accessible on mobile & desktop) */}
+            <div>
               <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
                 <SheetTrigger asChild>
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-8 w-8 p-0 rounded-lg border-border/80 bg-background/50 hover:bg-muted text-foreground flex items-center justify-center cursor-pointer"
+                    className="h-8 sm:h-9 px-2.5 rounded-lg border-border/80 bg-background/50 hover:bg-muted text-foreground flex items-center gap-1.5 cursor-pointer shadow-2xs"
                     aria-label="Open menu"
                   >
                     <Menu className="w-4 h-4" />
+                    <span className="hidden sm:inline text-xs font-bold">Menu</span>
                   </Button>
                 </SheetTrigger>
                 <SheetContent side="right" className="w-[300px] p-5 flex flex-col justify-between">
@@ -286,6 +292,27 @@ export function AppHeader() {
                     </div>
 
 
+
+                    {/* Walk-in POS Terminal */}
+                    <div className="p-3 rounded-xl bg-primary/10 border border-primary/30 flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <span className="font-bold text-xs text-foreground flex items-center gap-1.5">
+                          <UtensilsCrossed className="w-4 h-4 text-primary" />
+                          <span>Walk-in Counter POS</span>
+                        </span>
+                        <p className="text-[10px] text-muted-foreground">
+                          Direct counter billing & phone customer auto-fill.
+                        </p>
+                      </div>
+                      <Link
+                        href="/pos"
+                        onClick={() => setIsMobileMenuOpen(false)}
+                        className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md text-xs font-bold bg-primary hover:bg-primary/90 text-primary-foreground cursor-pointer shadow-2xs"
+                      >
+                        <span>Open</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </Link>
+                    </div>
 
                     {/* Delivery Boy / Rider Portal */}
                     <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-between">
