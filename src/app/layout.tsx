@@ -23,8 +23,8 @@ export const metadata: Metadata = {
   description: "Real-time operating system for multi-brand Indian cloud kitchens",
   manifest: "/manifest.json",
   icons: {
-    icon: "/logo.png",
-    apple: "/logo.png",
+    icon: "/favicon.ico",
+    apple: "/icon-192.png",
   },
   appleWebApp: {
     capable: true,
