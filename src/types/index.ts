@@ -133,6 +133,9 @@ export interface PackingChecklist {
   beverageSeparated: boolean;
 }
 
+export type PaymentMethod = 'CASH' | 'UPI' | 'CARD' | 'COD' | 'DUE';
+export type PaymentStatus = 'PAID' | 'PENDING';
+
 export interface OrderFinancials {
   grossAmount: number;
   discount: number;
@@ -156,6 +159,8 @@ export interface Order {
   customerPhone?: string;
   customerAddress?: string;
   status: OrderStatus;
+  paymentMethod?: PaymentMethod;
+  paymentStatus?: PaymentStatus;
   items: OrderItem[];
   checklist: PackingChecklist;
   dynamicChecklist?: DynamicChecklistItem[];

@@ -1,3 +1,4 @@
+import React from "react";
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
@@ -54,11 +55,15 @@ export default function RootLayout({
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
       <body className="min-h-screen bg-background text-foreground antialiased font-sans">
         <KitchenProvider>
-          <AppHeader />
+          <React.Suspense fallback={<div className="h-14 border-b border-border bg-background" />}>
+            <AppHeader />
+          </React.Suspense>
           <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-8">
             {children}
           </main>
-          <NavigationBar />
+          <React.Suspense fallback={null}>
+            <NavigationBar />
+          </React.Suspense>
           <ServiceWorkerRegister />
         </KitchenProvider>
       </body>

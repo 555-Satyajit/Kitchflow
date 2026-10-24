@@ -16,6 +16,12 @@ import { Badge } from '@/components/ui/badge'
 
 export function NavigationBar() {
   const pathname = usePathname()
+
+  // Completely isolate public customer invoice pages
+  if (pathname?.startsWith('/invoice')) {
+    return null
+  }
+
   const { orders, ingredients, userRole } = useKitchen()
 
   const kdsPendingCount = orders.filter((o) => o.status === 'ACCEPTED' || o.status === 'PREPARING').length

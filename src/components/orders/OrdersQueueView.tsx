@@ -4,10 +4,11 @@ import React, { useState } from 'react'
 import Link from 'next/link'
 import { Order, OrderStatus } from '@/types'
 import { formatCurrency, formatDuration, formatStationName, cn } from '@/lib/utils'
-import { Plus, Info, ShoppingBag, Clock, ArrowRight, CheckCircle2 } from 'lucide-react'
+import { Plus, Info, ShoppingBag, Clock, ArrowRight, CheckCircle2, Printer } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { BillReceiptModal } from '@/components/pos/BillReceiptModal'
 
 interface OrdersQueueViewProps {
   orders: Order[]
@@ -27,6 +28,7 @@ export function OrdersQueueView({
   const [filter, setFilter] = useState<'ALL' | 'ACTIVE' | 'READY'>('ALL')
   const [now, setNow] = useState<number>(0)
   const [mounted, setMounted] = useState<boolean>(false)
+  const [billingReceiptOrder, setBillingReceiptOrder] = useState<Order | null>(null)
 
   // Live ticker for queue SLA countdown (client-side only after mount)
   React.useEffect(() => {
@@ -309,7 +311,19 @@ export function OrdersQueueView({
                     </span>
                   </button>
 
-                  <div className="flex items-center space-x-2 shrink-0">
+                  <div className="flex items-center space-x-1.5 shrink-0">
+                    {/* Bill Receipt & WhatsApp Share Button */}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setBillingReceiptOrder(order)}
+                      className="text-xs h-8 px-2 text-muted-foreground hover:text-foreground cursor-pointer gap-1"
+                      title="View Tax Invoice & Send on WhatsApp"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Bill</span>
+                    </Button>
+
                     {order.status === 'RECEIVED' && (
                       <Button
                         size="sm"
@@ -360,6 +374,15 @@ export function OrdersQueueView({
           })
         )}
       </div>
+
+      {/* Bill & WhatsApp Receipt Dialog */}
+      <BillReceiptModal
+        order={billingReceiptOrder}
+        open={Boolean(billingReceiptOrder)}
+        onOpenChange={(open) => {
+          if (!open) setBillingReceiptOrder(null)
+        }}
+      />
     </div>
   )
 }

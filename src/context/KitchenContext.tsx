@@ -22,7 +22,9 @@ import {
   PurchaseOrder,
   PurchaseOrderItem,
   UserRole,
-  KitchenLanguage
+  KitchenLanguage,
+  PaymentMethod,
+  PaymentStatus
 } from '@/types'
 import { 
   CommissionSettings, 
@@ -62,8 +64,10 @@ interface KitchenContextType {
     customerName: string
     customerPhone?: string
     customerAddress?: string
+    paymentMethod?: PaymentMethod
+    paymentStatus?: PaymentStatus
     items: { menuItemId: string; quantity: number }[]
-  }) => void
+  }) => Order
   handleAddBrand: (brand: Omit<Brand, 'id'>) => void
   handleAddMenuItem: (newItem: Omit<MenuItem, 'id'>) => void
   handleAddIngredient: (newIng: Omit<Ingredient, 'id'>) => void
@@ -423,6 +427,8 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     customerName,
     customerPhone,
     customerAddress,
+    paymentMethod = 'CASH',
+    paymentStatus = 'PAID',
     items,
   }: {
     brandId: string
@@ -430,8 +436,10 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     customerName: string
     customerPhone?: string
     customerAddress?: string
+    paymentMethod?: PaymentMethod
+    paymentStatus?: PaymentStatus
     items: { menuItemId: string; quantity: number }[]
-  }) => {
+  }): Order => {
     const brand = brands.find((b) => b.id === brandId) || brands[0]
     let itemSubtotal = 0
     let packagingMaterialCost = 0
@@ -487,6 +495,8 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
       customerPhone: customerPhone?.trim() || undefined,
       customerAddress: customerAddress?.trim() || undefined,
       status: 'ACCEPTED', // Manual counter orders go straight to cook
+      paymentMethod,
+      paymentStatus,
       targetPrepMinutes: 12,
       createdAt: new Date().toISOString(),
       acknowledgedAt: new Date().toISOString(),
@@ -501,7 +511,16 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
       financials: fin,
     }
 
-    setOrders((prev) => [newOrd, ...prev])
+    setOrders((prev) => {
+      const updated = [newOrd, ...prev]
+      try {
+        localStorage.setItem(`kitchflow_order_${newOrd.id}`, JSON.stringify(newOrd))
+      } catch (e) {
+        console.error('Failed saving order to localStorage', e)
+      }
+      return updated
+    })
+    return newOrd
   }
 
   const handleAddBrand = (brand: Omit<Brand, 'id'>) => {

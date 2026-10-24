@@ -50,6 +50,12 @@ import { cn } from '@/lib/utils'
 
 export function AppHeader() {
   const pathname = usePathname()
+
+  // Completely isolate public customer invoice pages so customers never see inner kitchen software
+  if (pathname?.startsWith('/invoice')) {
+    return null
+  }
+
   const { 
     isPausedAll, 
     pausedPlatforms, 

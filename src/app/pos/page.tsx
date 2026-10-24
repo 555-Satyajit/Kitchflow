@@ -3,7 +3,7 @@
 import React, { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Brand, MenuItem, Channel } from '@/types'
+import { Brand, MenuItem, Channel, PaymentMethod, Order } from '@/types'
 import { formatCurrency, cn } from '@/lib/utils'
 import { 
   ShoppingBag, 
@@ -19,12 +19,20 @@ import {
   X,
   ArrowLeft,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  Banknote,
+  QrCode,
+  CreditCard,
+  Clock,
+  Printer,
+  Share2,
+  Truck
 } from 'lucide-react'
 import { useKitchen } from '@/context/KitchenContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { BillReceiptModal } from '@/components/pos/BillReceiptModal'
 
 export default function POSPage() {
   const router = useRouter()
@@ -40,6 +48,13 @@ export default function POSPage() {
   const [cart, setCart] = useState<{ [menuItemId: string]: number }>({})
   const [customerFoundBadge, setCustomerFoundBadge] = useState(false)
   const [isCartOpen, setIsCartOpen] = useState(false)
+
+  // Billing & Payment States
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('CASH')
+  const [cashTendered, setCashTendered] = useState<string>('')
+  const [applyGst, setApplyGst] = useState<boolean>(true)
+  const [completedOrder, setCompletedOrder] = useState<Order | null>(null)
+  const [isReceiptOpen, setIsReceiptOpen] = useState<boolean>(false)
 
   // Load customer directory from localStorage or existing past orders
   const getSavedCustomers = (): Record<string, { name: string; address?: string }> => {
@@ -123,6 +138,9 @@ export default function POSPage() {
     const item = menuItems.find((m) => m.id === id)
     return sum + (item ? item.sellingPrice * q : 0)
   }, 0)
+  const gstAmount = applyGst ? Math.round(cartSubtotal * 0.05) : 0
+  const grandTotal = cartSubtotal + gstAmount
+  const changeToReturn = cashTendered ? Math.max(0, Number(cashTendered) - grandTotal) : 0
 
   const handlePunchOrder = (e: React.FormEvent) => {
     e.preventDefault()
@@ -150,17 +168,22 @@ export default function POSPage() {
       }
     }
 
-    handleCreateManualOrder({
+    const createdOrder = handleCreateManualOrder({
       brandId: currentBrand.id,
       channel,
       customerName: customerName.trim(),
       customerPhone: customerPhone.trim() || undefined,
       customerAddress: customerAddress.trim() || undefined,
+      paymentMethod,
+      paymentStatus: paymentMethod === 'DUE' || paymentMethod === 'COD' ? 'PENDING' : 'PAID',
       items,
     })
 
+    // Store created order, show Bill/WhatsApp modal, then reset cart
+    setCompletedOrder(createdOrder)
+    setIsReceiptOpen(true)
     setCart({})
-    router.push('/orders')
+    setCashTendered('')
   }
 
   return (
@@ -506,28 +529,152 @@ export default function POSPage() {
             </div>
           )}
 
+          {/* Step 4: Billing & Payment Mode */}
+          {totalItemsCount > 0 && (
+            <div className="pt-3 border-t border-border space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground font-mono">
+                  Payment Method
+                </span>
+                <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={applyGst}
+                    onChange={(e) => setApplyGst(e.target.checked)}
+                    className="rounded border-border accent-primary cursor-pointer w-3.5 h-3.5"
+                  />
+                  <span>Apply 5% GST</span>
+                </label>
+              </div>
+
+              {/* Payment Method Selector Grid */}
+              <div className="grid grid-cols-5 gap-1.5">
+                {[
+                  { id: 'CASH' as PaymentMethod, label: 'Cash', icon: Banknote },
+                  { id: 'UPI' as PaymentMethod, label: 'UPI / QR', icon: QrCode },
+                  { id: 'CARD' as PaymentMethod, label: 'Card / EDC', icon: CreditCard },
+                  { id: 'COD' as PaymentMethod, label: 'Cash on Del (COD)', icon: Truck },
+                  { id: 'DUE' as PaymentMethod, label: 'Pay Later', icon: Clock },
+                ].map((m) => {
+                  const Icon = m.icon
+                  const isSelected = paymentMethod === m.id
+                  return (
+                    <button
+                      type="button"
+                      key={m.id}
+                      onClick={() => setPaymentMethod(m.id)}
+                      className={cn(
+                        "flex flex-col items-center justify-center py-2 px-1 rounded-xl border text-[11px] font-bold transition-all cursor-pointer gap-1 text-center leading-tight",
+                        isSelected
+                          ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                          : "bg-background text-muted-foreground border-border/80 hover:bg-muted hover:text-foreground"
+                      )}
+                    >
+                      <Icon className="w-4 h-4 shrink-0" />
+                      <span className="truncate w-full">{m.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+
+              {/* Cash Quick Tender Helper */}
+              {paymentMethod === 'CASH' && (
+                <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold text-amber-900 dark:text-amber-300">
+                      Tendered:
+                    </span>
+                    <Input
+                      type="number"
+                      placeholder={`e.g. ${grandTotal}`}
+                      value={cashTendered}
+                      onChange={(e) => setCashTendered(e.target.value)}
+                      className="h-7 w-24 text-xs font-mono font-bold bg-background"
+                    />
+                  </div>
+                  {cashTendered && Number(cashTendered) >= grandTotal && (
+                    <div className="text-right">
+                      <span className="text-[10px] text-muted-foreground block font-mono">
+                        Return Change:
+                      </span>
+                      <span className="font-mono font-black text-emerald-600 dark:text-emerald-400 text-sm">
+                        {formatCurrency(changeToReturn)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* UPI QR Instant Helper */}
+              {paymentMethod === 'UPI' && (
+                <div className="p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/25 flex items-center justify-between text-xs">
+                  <span className="text-blue-900 dark:text-blue-300 font-medium">
+                    Show dynamic QR at counter for:
+                  </span>
+                  <span className="font-mono font-black text-blue-700 dark:text-blue-400 text-sm">
+                    {formatCurrency(grandTotal)}
+                  </span>
+                </div>
+              )}
+
+              {/* COD Delivery Helper */}
+              {paymentMethod === 'COD' && (
+                <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-between text-xs">
+                  <span className="text-amber-900 dark:text-amber-300 font-medium">
+                    Rider will collect cash at delivery:
+                  </span>
+                  <span className="font-mono font-black text-amber-700 dark:text-amber-400 text-sm">
+                    {formatCurrency(grandTotal)}
+                  </span>
+                </div>
+              )}
+
+              {/* Bill Summary Breakdown */}
+              <div className="space-y-1 text-xs text-muted-foreground bg-muted/20 p-2.5 rounded-xl border border-border/60 font-mono">
+                <div className="flex justify-between">
+                  <span>Items Subtotal:</span>
+                  <span>{formatCurrency(cartSubtotal)}</span>
+                </div>
+                {applyGst && (
+                  <div className="flex justify-between text-[11px]">
+                    <span>GST (2.5% CGST + 2.5% SGST):</span>
+                    <span>+{formatCurrency(gstAmount)}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* In-Page Cart Checkout Actions */}
           <div className="pt-3 border-t border-border flex items-center justify-between gap-3">
             <div>
               <span className="text-[10px] uppercase font-bold text-muted-foreground block font-mono">
-                Total:
+                Bill Total:
               </span>
               <span className="text-xl font-black font-mono text-foreground">
-                {formatCurrency(cartSubtotal)}
+                {formatCurrency(grandTotal)}
               </span>
             </div>
 
             <Button
               type="submit"
               disabled={totalItemsCount === 0}
-              className="h-10 px-6 text-xs font-extrabold gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm cursor-pointer disabled:opacity-40"
+              className="h-10 px-5 text-xs font-extrabold gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm cursor-pointer disabled:opacity-40"
             >
               <CheckCircle2 className="w-4 h-4" />
-              <span>Punch to Kitchen</span>
+              <span>Punch & Print Bill</span>
             </Button>
           </div>
         </div>
       </form>
+
+      {/* Bill & WhatsApp Receipt Modal */}
+      <BillReceiptModal
+        order={completedOrder}
+        open={isReceiptOpen}
+        onOpenChange={setIsReceiptOpen}
+        onDone={() => router.push('/orders')}
+      />
     </div>
   )
 }
