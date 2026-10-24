@@ -187,79 +187,95 @@ export default function POSPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-4 pb-8">
-      {/* Clean Single-Line Header */}
-      <div className="flex items-center justify-between py-1 border-b border-border/60 pb-3">
+    <div className="max-w-2xl mx-auto space-y-4 pb-12">
+      {/* iOS Styled Navigation Subheader */}
+      <div className="flex items-center justify-between py-1">
         <Link
           href="/orders"
-          className="inline-flex items-center gap-2 text-sm font-bold text-foreground hover:text-primary transition-colors cursor-pointer"
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground active:scale-[0.98] transition-all"
         >
-          <ArrowLeft className="w-4 h-4" />
+          <ArrowLeft className="w-4 h-4 text-primary" />
           <span>Quick Counter POS</span>
         </Link>
-        <Link href="/orders" className="text-xs text-muted-foreground hover:text-foreground">
+        <Link 
+          href="/orders" 
+          className="text-xs font-semibold text-muted-foreground hover:text-foreground active:scale-95 transition-all px-2 py-1 rounded-lg hover:bg-muted/40"
+        >
           Cancel
         </Link>
       </div>
 
       <form onSubmit={handlePunchOrder} className="space-y-4">
-        {/* Step 1: Select Brand */}
+        {/* Step 1: Select Brand (Apple Inset Pill Bar) */}
         <div className="space-y-1.5">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground font-mono">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground font-mono block">
             1. Select Brand
           </span>
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
-            {brands.map((b) => (
-              <button
-                type="button"
-                key={b.id}
-                onClick={() => setSelectedBrandId(b.id)}
-                className={cn(
-                  "px-3 py-1.5 rounded-lg font-bold text-xs whitespace-nowrap transition-all border cursor-pointer",
-                  selectedBrandId === b.id
-                    ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                    : "bg-background text-foreground border-border/80 hover:bg-muted"
-                )}
-              >
-                {b.name}
-              </button>
-            ))}
+            {brands.map((b) => {
+              const isSelected = selectedBrandId === b.id
+              return (
+                <button
+                  type="button"
+                  key={b.id}
+                  onClick={() => setSelectedBrandId(b.id)}
+                  className={cn(
+                    "px-3.5 py-2 rounded-xl font-bold text-xs whitespace-nowrap transition-all border cursor-pointer active:scale-[0.98] shadow-2xs flex items-center gap-2",
+                    isSelected
+                      ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                      : "bg-card text-foreground border-border/80 hover:bg-muted/50"
+                  )}
+                >
+                  <span 
+                    className="w-2 h-2 rounded-full shrink-0" 
+                    style={{ backgroundColor: isSelected ? '#ffffff' : b.color }} 
+                  />
+                  <span>{b.name}</span>
+                </button>
+              )
+            })}
           </div>
         </div>
 
-        {/* Step 2: Order Type & Customer Details (Cleanly Stacked at Top) */}
+        {/* Step 2: Order Type & Customer Details (Apple Segmented Control) */}
         <div className="space-y-2.5">
           <div className="space-y-1">
-            <label className="text-[10px] font-bold uppercase text-muted-foreground font-mono">Order Type</label>
-            <div className="grid grid-cols-2 gap-1 bg-muted/80 p-0.5 rounded-lg border border-border">
+            <label className="text-[10px] font-semibold uppercase text-muted-foreground font-mono block">
+              Order Type
+            </label>
+            <div className="grid grid-cols-2 gap-1 bg-muted/50 p-1 rounded-2xl border border-border/60 shadow-2xs">
               <button
                 type="button"
                 onClick={() => setChannel('WALK_IN')}
                 className={cn(
-                  "py-1.5 rounded font-bold text-xs transition-all cursor-pointer text-center",
-                  channel === 'WALK_IN' ? "bg-background text-foreground shadow-2xs" : "text-muted-foreground hover:text-foreground"
+                  "h-9 rounded-xl font-bold text-xs transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 active:scale-[0.98]",
+                  channel === 'WALK_IN' 
+                    ? "bg-background text-foreground shadow-sm" 
+                    : "text-muted-foreground hover:text-foreground"
                 )}
               >
-                Walk-In
+                <span>Walk-In</span>
               </button>
               <button
                 type="button"
                 onClick={() => setChannel('DIRECT')}
                 className={cn(
-                  "py-1.5 rounded font-bold text-xs transition-all cursor-pointer text-center",
-                  channel === 'DIRECT' ? "bg-background text-foreground shadow-2xs" : "text-muted-foreground hover:text-foreground"
+                  "h-9 rounded-xl font-bold text-xs transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 active:scale-[0.98]",
+                  channel === 'DIRECT' 
+                    ? "bg-background text-foreground shadow-sm" 
+                    : "text-muted-foreground hover:text-foreground"
                 )}
               >
-                Phone Delivery
+                <span>Phone Delivery</span>
               </button>
             </div>
           </div>
 
           {/* If Walk-In: Show Table Number with fast presets */}
           {channel === 'WALK_IN' ? (
-            <div className="space-y-1.5 p-2 rounded-xl bg-muted/20 border border-border/60">
+            <div className="space-y-2 p-3 rounded-2xl bg-card/90 border border-border/80 backdrop-blur-md shadow-2xs">
               <div className="flex items-center justify-between">
-                <label className="text-[10px] font-bold uppercase text-muted-foreground font-mono">
+                <label className="text-[10px] font-semibold uppercase text-muted-foreground font-mono">
                   Table Number
                 </label>
                 <div className="flex items-center gap-1">
@@ -269,7 +285,7 @@ export default function POSPage() {
                       key={t}
                       onClick={() => setCustomerName(t)}
                       className={cn(
-                        "px-1.5 py-0.5 text-[10px] font-bold rounded border cursor-pointer transition-all",
+                        "px-2 py-0.5 text-[10px] font-mono font-bold rounded-lg border cursor-pointer active:scale-95 transition-all shadow-2xs",
                         customerName === t
                           ? "bg-primary text-primary-foreground border-primary"
                           : "bg-background text-muted-foreground border-border hover:text-foreground"
@@ -284,21 +300,21 @@ export default function POSPage() {
                 placeholder="e.g. Table 1 or T-4 (or enter custom table/token)"
                 value={customerName}
                 onChange={(e) => setCustomerName(e.target.value)}
-                className="h-8 text-xs bg-background"
+                className="h-10 text-xs bg-background rounded-xl border-border/80"
               />
             </div>
           ) : (
             /* If Phone Delivery: Show Customer Phone (Lookup), Name & Address */
-            <div className="space-y-2 p-2.5 rounded-xl bg-muted/30 border border-border/80 animate-in fade-in duration-150">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="space-y-2.5 p-3.5 rounded-2xl bg-card/90 border border-border/80 backdrop-blur-md shadow-2xs animate-in fade-in duration-150">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase text-muted-foreground font-mono flex items-center justify-between">
+                  <label className="text-[10px] font-semibold uppercase text-muted-foreground font-mono flex items-center justify-between">
                     <span className="flex items-center gap-1">
                       <PhoneCall className="w-3 h-3 text-primary" />
                       <span>Phone Number</span>
                     </span>
                     {customerFoundBadge && (
-                      <Badge variant="outline" className="h-4 px-1 text-[9px] font-bold bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
+                      <Badge variant="outline" className="h-4 px-1.5 text-[9px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30">
                         ✓ Repeat Customer
                       </Badge>
                     )}
@@ -308,32 +324,32 @@ export default function POSPage() {
                     placeholder="e.g. 98765 43210"
                     value={customerPhone}
                     onChange={(e) => handlePhoneChange(e.target.value)}
-                    className="h-8 text-xs bg-background"
+                    className="h-10 text-xs bg-background rounded-xl border-border/80"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase text-muted-foreground font-mono">
+                  <label className="text-[10px] font-semibold uppercase text-muted-foreground font-mono">
                     Customer Name
                   </label>
                   <Input
                     placeholder="e.g. Rahul Sharma"
                     value={customerName}
                     onChange={(e) => setCustomerName(e.target.value)}
-                    className="h-8 text-xs bg-background"
+                    className="h-10 text-xs bg-background rounded-xl border-border/80"
                   />
                 </div>
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-bold uppercase text-muted-foreground font-mono">
+                <label className="text-[10px] font-semibold uppercase text-muted-foreground font-mono">
                   Delivery Address / Flat
                 </label>
                 <Input
                   placeholder="e.g. Flat 402, Sunshine Apts"
                   value={customerAddress}
                   onChange={(e) => setCustomerAddress(e.target.value)}
-                  className="h-8 text-xs bg-background"
+                  className="h-10 text-xs bg-background rounded-xl border-border/80"
                 />
               </div>
             </div>
@@ -341,12 +357,12 @@ export default function POSPage() {
         </div>
 
         {/* Step 3: Dish Catalog with Sticky Filters & Scrollable Grid */}
-        <div className="space-y-2">
+        <div className="space-y-2.5">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground font-mono">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground font-mono">
               Select Dishes
             </span>
-            <span className="text-[10px] text-muted-foreground font-mono">
+            <span className="text-[10px] text-muted-foreground font-mono bg-muted/50 px-2 py-0.5 rounded-md">
               {filteredDishes.length} of {brandDishes.length} items
             </span>
           </div>
@@ -354,20 +370,21 @@ export default function POSPage() {
           {/* Instant Search Bar & Category Dropdown */}
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
-              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <Input
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="text"
                 placeholder="Search dishes..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-8 pl-8 pr-7 text-xs bg-background"
+                className="w-full h-10 pl-9 pr-8 text-xs rounded-xl border border-border/80 bg-background text-foreground placeholder:text-muted-foreground/70 focus:outline-hidden focus:ring-2 focus:ring-primary/20 shadow-2xs transition-all"
               />
               {searchQuery && (
                 <button
                   type="button"
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-0.5 cursor-pointer"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <X className="w-3 h-3" />
                 </button>
               )}
             </div>
@@ -377,7 +394,7 @@ export default function POSPage() {
               <select
                 value={selectedStation}
                 onChange={(e) => setSelectedStation(e.target.value)}
-                className="h-8 px-2.5 rounded-md border border-input bg-background text-xs font-semibold text-foreground focus:outline-hidden focus:ring-1 focus:ring-ring cursor-pointer max-w-[150px] truncate"
+                className="h-10 px-3 rounded-xl border border-border/80 bg-background text-xs font-semibold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/20 cursor-pointer max-w-[150px] truncate shadow-2xs"
               >
                 <option value="ALL">All Categories ({brandDishes.length})</option>
                 {availableStations.map((st) => {
@@ -394,14 +411,14 @@ export default function POSPage() {
 
           {/* High-Capacity Dish Catalog (Scrolls smoothly for 100s of items) */}
           {filteredDishes.length === 0 ? (
-            <div className="p-8 rounded-xl border border-dashed border-border/80 text-center space-y-1 bg-muted/20">
-              <p className="text-xs font-semibold text-foreground">No dishes found</p>
+            <div className="p-8 rounded-2xl border border-dashed border-border/80 text-center space-y-1 bg-muted/20">
+              <p className="text-xs font-bold text-foreground">No dishes found</p>
               <p className="text-[11px] text-muted-foreground">
                 Try searching for another keyword or clear the filter.
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-[58vh] overflow-y-auto pr-1 pb-16">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-[58vh] overflow-y-auto pr-1 pb-16 no-scrollbar">
               {filteredDishes.map((dish) => {
                 const inCartQty = cart[dish.id] || 0
                 return (
@@ -409,34 +426,34 @@ export default function POSPage() {
                     key={dish.id}
                     onClick={() => handleAddToCart(dish.id)}
                     className={cn(
-                      "p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between min-h-[72px] select-none active:scale-[0.98]",
+                      "p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between min-h-[80px] select-none active:scale-[0.98] shadow-2xs backdrop-blur-xs",
                       inCartQty > 0
-                        ? "border-primary bg-primary/10 shadow-xs ring-1 ring-primary"
-                        : "border-border/80 bg-card hover:border-primary/50 hover:bg-muted/30"
+                        ? "border-primary bg-primary/10 shadow-sm ring-1 ring-primary/40"
+                        : "border-border/80 bg-card/90 hover:border-primary/50 hover:bg-muted/30"
                     )}
                   >
                     <div>
-                      <h4 className="font-bold text-xs text-foreground line-clamp-2 leading-tight">{dish.name}</h4>
-                      <span className="text-[9px] text-muted-foreground font-mono block mt-1">
+                      <h4 className="font-bold text-xs text-foreground line-clamp-2 leading-snug">{dish.name}</h4>
+                      <span className="text-[9px] text-muted-foreground font-mono block mt-1 uppercase tracking-wider">
                         {dish.station}
                       </span>
                     </div>
 
-                    <div className="flex items-center justify-between mt-2 pt-1 border-t border-border/40">
+                    <div className="flex items-center justify-between mt-2.5 pt-1.5 border-t border-border/40">
                       <span className="font-extrabold font-mono text-primary text-xs">
                         {formatCurrency(dish.sellingPrice)}
                       </span>
                       {inCartQty > 0 ? (
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1 bg-background rounded-lg border border-border/80 p-0.5 shadow-2xs">
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation()
                               handleUpdateQty(dish.id, -1)
                             }}
-                            className="w-5 h-5 flex items-center justify-center rounded bg-background border border-border text-foreground font-black text-xs hover:bg-muted cursor-pointer"
+                            className="w-5 h-5 flex items-center justify-center rounded-md bg-muted text-foreground font-black text-xs hover:bg-muted/80 cursor-pointer active:scale-90"
                           >
-                            -
+                            −
                           </button>
                           <span className="font-mono font-bold text-xs px-1 text-primary">{inCartQty}</span>
                           <button
@@ -445,14 +462,14 @@ export default function POSPage() {
                               e.stopPropagation()
                               handleUpdateQty(dish.id, 1)
                             }}
-                            className="w-5 h-5 flex items-center justify-center rounded bg-primary text-primary-foreground font-black text-xs cursor-pointer"
+                            className="w-5 h-5 flex items-center justify-center rounded-md bg-primary text-primary-foreground font-black text-xs cursor-pointer active:scale-90"
                           >
                             +
                           </button>
                         </div>
                       ) : (
-                        <span className="text-[10px] font-bold text-muted-foreground flex items-center gap-0.5 hover:text-foreground">
-                          <Plus className="w-3 h-3" /> Add
+                        <span className="text-[10px] font-semibold text-muted-foreground flex items-center gap-0.5 hover:text-foreground">
+                          <Plus className="w-3 h-3 text-primary" /> Add
                         </span>
                       )}
                     </div>
@@ -577,31 +594,68 @@ export default function POSPage() {
                 })}
               </div>
 
-              {/* Cash Quick Tender Helper */}
+              {/* Cash Quick Tender Helper (Bigger Ergonomic Apple Inset Card) */}
               {paymentMethod === 'CASH' && (
-                <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-between gap-3 text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-bold text-amber-900 dark:text-amber-300">
-                      Tendered:
-                    </span>
-                    <Input
-                      type="number"
-                      placeholder={`e.g. ${grandTotal}`}
-                      value={cashTendered}
-                      onChange={(e) => setCashTendered(e.target.value)}
-                      className="h-7 w-24 text-xs font-mono font-bold bg-background"
-                    />
-                  </div>
-                  {cashTendered && Number(cashTendered) >= grandTotal && (
-                    <div className="text-right">
-                      <span className="text-[10px] text-muted-foreground block font-mono">
-                        Return Change:
+                <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-2.5 shadow-2xs">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 flex-1">
+                      <span className="text-xs font-bold text-amber-950 dark:text-amber-200 tracking-tight shrink-0">
+                        Cash Tendered:
                       </span>
-                      <span className="font-mono font-black text-emerald-600 dark:text-emerald-400 text-sm">
-                        {formatCurrency(changeToReturn)}
-                      </span>
+                      <div className="relative flex-1 max-w-[160px]">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono font-bold text-xs text-muted-foreground">
+                          ₹
+                        </span>
+                        <input
+                          type="number"
+                          placeholder={`${grandTotal}`}
+                          value={cashTendered}
+                          onChange={(e) => setCashTendered(e.target.value)}
+                          className="w-full h-10 pl-7 pr-3 text-sm font-mono font-extrabold bg-background rounded-xl border border-amber-500/40 text-foreground focus:outline-hidden focus:ring-2 focus:ring-amber-500/30 shadow-2xs"
+                        />
+                      </div>
                     </div>
-                  )}
+
+                    {cashTendered && Number(cashTendered) >= grandTotal && (
+                      <div className="text-right shrink-0 bg-background/80 px-3 py-1 rounded-xl border border-border/60 shadow-2xs">
+                        <span className="text-[10px] text-muted-foreground block font-mono">
+                          Return Change:
+                        </span>
+                        <span className="font-mono font-extrabold text-emerald-600 dark:text-emerald-400 text-base">
+                          {formatCurrency(changeToReturn)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Fast Tender Preset Pills */}
+                  <div className="flex items-center gap-1.5 pt-0.5">
+                    <span className="text-[10px] font-mono text-muted-foreground font-semibold">Exact / Round:</span>
+                    {[
+                      grandTotal, 
+                      Math.ceil(grandTotal / 50) * 50, 
+                      Math.ceil(grandTotal / 100) * 100, 
+                      500, 
+                      1000
+                    ]
+                      .filter((val, idx, arr) => val >= grandTotal && arr.indexOf(val) === idx)
+                      .slice(0, 4)
+                      .map((val) => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setCashTendered(String(val))}
+                          className={cn(
+                            "px-2.5 py-1 text-[11px] font-mono font-bold rounded-lg border transition-all cursor-pointer active:scale-95 shadow-2xs",
+                            cashTendered === String(val)
+                              ? "bg-amber-500 text-white border-amber-600 font-extrabold"
+                              : "bg-background text-foreground border-border/80 hover:bg-muted"
+                          )}
+                        >
+                          ₹{val}
+                        </button>
+                      ))}
+                  </div>
                 </div>
               )}
 
