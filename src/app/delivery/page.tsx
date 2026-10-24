@@ -7,20 +7,18 @@ import {
   Phone, 
   MapPin, 
   CheckCircle2, 
-  Clock, 
-  ArrowLeft, 
+  ChevronLeft, 
   Search, 
+  Navigation,
+  X,
   PackageCheck,
-  ExternalLink,
-  ChevronRight,
-  ShieldCheck,
-  Navigation
+  Flame,
+  ArrowRight
 } from 'lucide-react'
 import { useKitchen } from '@/context/KitchenContext'
 import { formatCurrency, cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
 
 export default function DeliveryPortalPage() {
   const { orders, handleUpdateStatus } = useKitchen()
@@ -61,100 +59,137 @@ export default function DeliveryPortalPage() {
 
   return (
     <div className="max-w-xl mx-auto space-y-4 pb-24">
-      {/* Header */}
-      <div className="flex items-center justify-between py-1 border-b border-border/60 pb-3">
+      {/* iOS Styled Navigation Subheader */}
+      <div className="flex items-center justify-between py-1">
         <Link
           href="/orders"
-          className="inline-flex items-center gap-2 text-sm font-bold text-foreground hover:text-primary transition-colors cursor-pointer"
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground active:scale-[0.98] transition-all"
         >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Kitchen Live Queue</span>
+          <ChevronLeft className="w-4 h-4 text-primary" />
+          <span>Kitchen Queue</span>
         </Link>
-        <Badge variant="outline" className="font-mono text-xs gap-1 border-primary/30 text-primary bg-primary/10">
-          <Bike className="w-3.5 h-3.5" />
-          <span>Delivery Portal</span>
-        </Badge>
-      </div>
-
-      {/* Driver Switcher Bar */}
-      <div className="p-3 rounded-xl bg-card border border-border shadow-2xs flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center font-bold text-xs">
-            🚴
-          </div>
-          <div>
-            <span className="text-[10px] uppercase font-bold text-muted-foreground block font-mono">Active Rider</span>
-            <span className="text-xs font-extrabold text-foreground">{activeDriver}</span>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 text-right">
-          <div>
-            <span className="text-[10px] uppercase font-bold text-muted-foreground block font-mono">Dispatched Today</span>
-            <span className="text-xs font-black font-mono text-emerald-600">{completedTodayCount} Delivered</span>
-          </div>
+        <div className="flex items-center gap-1.5">
+          <Badge 
+            variant="outline" 
+            className="text-[11px] font-medium py-1 px-2.5 gap-1.5 rounded-full border-border/80 bg-card/80 backdrop-blur-md shadow-2xs font-mono"
+          >
+            <Bike className="w-3.5 h-3.5 text-primary" />
+            <span>Delivery Hub</span>
+          </Badge>
         </div>
       </div>
 
-      {/* Filter Tabs */}
-      <div className="grid grid-cols-3 gap-1 bg-muted/80 p-0.5 rounded-lg border border-border text-xs font-bold">
+      {/* Driver Status Inset Card */}
+      <div className="p-3.5 rounded-2xl bg-card/90 border border-border/80 backdrop-blur-md shadow-2xs flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shadow-inner">
+            <Bike className="w-5 h-5" />
+          </div>
+          <div>
+            <span className="text-[10px] font-semibold text-muted-foreground tracking-wider uppercase font-mono block">
+              Active Rider
+            </span>
+            <span className="text-sm font-bold text-foreground">
+              {activeDriver}
+            </span>
+          </div>
+        </div>
+        <div className="text-right">
+          <span className="text-[10px] font-semibold text-muted-foreground tracking-wider uppercase font-mono block">
+            Completed Shift
+          </span>
+          <Badge 
+            variant="outline" 
+            className="text-xs font-bold font-mono text-emerald-600 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 rounded-lg"
+          >
+            {completedTodayCount} Delivered
+          </Badge>
+        </div>
+      </div>
+
+      {/* Segmented Tab Control (Apple Inset Style) */}
+      <div className="grid grid-cols-3 gap-1 bg-muted/50 p-1 rounded-2xl border border-border/60 text-xs font-semibold shadow-2xs">
         <button
           type="button"
           onClick={() => setFilterTab('PENDING')}
           className={cn(
-            "py-1.5 rounded-md transition-all cursor-pointer text-center flex items-center justify-center gap-1",
-            filterTab === 'PENDING' ? "bg-background text-foreground shadow-2xs" : "text-muted-foreground"
+            "h-9 rounded-xl transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 active:scale-[0.98]",
+            filterTab === 'PENDING' 
+              ? "bg-background text-foreground shadow-sm font-bold" 
+              : "text-muted-foreground hover:text-foreground"
           )}
         >
-          <span>To Pick / Deliver</span>
+          <span>To Deliver</span>
           {pendingCount > 0 && (
-            <span className="w-4 h-4 rounded-full bg-primary text-primary-foreground text-[10px] font-mono flex items-center justify-center">
+            <span className="h-5 px-1.5 rounded-full bg-primary text-primary-foreground text-[10px] font-mono font-bold flex items-center justify-center">
               {pendingCount}
             </span>
           )}
         </button>
+
         <button
           type="button"
           onClick={() => setFilterTab('DISPATCHED')}
           className={cn(
-            "py-1.5 rounded-md transition-all cursor-pointer text-center",
-            filterTab === 'DISPATCHED' ? "bg-background text-foreground shadow-2xs" : "text-muted-foreground"
+            "h-9 rounded-xl transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 active:scale-[0.98]",
+            filterTab === 'DISPATCHED' 
+              ? "bg-background text-foreground shadow-sm font-bold" 
+              : "text-muted-foreground hover:text-foreground"
           )}
         >
-          Delivered ({completedTodayCount})
+          <span>Delivered</span>
+          {completedTodayCount > 0 && (
+            <span className="text-[10px] font-mono text-muted-foreground">({completedTodayCount})</span>
+          )}
         </button>
+
         <button
           type="button"
           onClick={() => setFilterTab('ALL')}
           className={cn(
-            "py-1.5 rounded-md transition-all cursor-pointer text-center",
-            filterTab === 'ALL' ? "bg-background text-foreground shadow-2xs" : "text-muted-foreground"
+            "h-9 rounded-xl transition-all cursor-pointer text-center active:scale-[0.98]",
+            filterTab === 'ALL' 
+              ? "bg-background text-foreground shadow-sm font-bold" 
+              : "text-muted-foreground hover:text-foreground"
           )}
         >
           All Runs
         </button>
       </div>
 
-      {/* Search Bar */}
+      {/* iOS Ergonomic Search Bar */}
       <div className="relative">
-        <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Search by order #, customer name, phone, or flat address..."
+        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <input
+          type="text"
+          placeholder="Search by order #, customer, phone, or address..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="h-8 pl-8 text-xs bg-background"
+          className="w-full h-10 pl-9 pr-8 text-xs rounded-xl border border-border/80 bg-background/90 text-foreground placeholder:text-muted-foreground/70 focus:outline-hidden focus:ring-2 focus:ring-primary/20 shadow-2xs transition-all"
         />
+        {searchQuery && (
+          <button
+            type="button"
+            onClick={() => setSearchQuery('')}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        )}
       </div>
 
-      {/* Order Cards List */}
-      <div className="space-y-3">
+      {/* Delivery Orders List */}
+      <div className="space-y-3.5">
         {deliveryOrders.length === 0 ? (
-          <div className="p-8 rounded-xl border border-dashed border-border/80 text-center space-y-1 bg-muted/20">
-            <Bike className="w-8 h-8 text-muted-foreground/50 mx-auto" />
-            <p className="text-xs font-semibold text-foreground">No orders in this queue</p>
-            <p className="text-[11px] text-muted-foreground">
+          <div className="p-10 rounded-3xl border border-dashed border-border/80 text-center space-y-2 bg-muted/20">
+            <div className="w-12 h-12 rounded-2xl bg-muted/60 flex items-center justify-center mx-auto text-muted-foreground/60">
+              <Bike className="w-6 h-6" />
+            </div>
+            <p className="text-sm font-bold text-foreground">No orders in this queue</p>
+            <p className="text-xs text-muted-foreground max-w-xs mx-auto">
               {filterTab === 'PENDING' 
-                ? 'All delivery orders have been handed over or delivered.' 
-                : 'No delivery history found matching the query.'}
+                ? 'All delivery orders have been handed over to riders or marked delivered.' 
+                : 'No delivery history matching your search query.'}
             </p>
           </div>
         ) : (
@@ -162,28 +197,30 @@ export default function DeliveryPortalPage() {
             const isReady = order.status === 'READY'
             const isDispatched = order.status === 'DISPATCHED'
             const isDirectPhone = order.channel === 'DIRECT'
+            const isSwiggy = order.channel === 'SWIGGY'
 
             return (
               <div 
                 key={order.id} 
                 className={cn(
-                  "p-3.5 rounded-xl border space-y-3 transition-all bg-card shadow-2xs",
-                  isReady ? "border-emerald-500/50 bg-emerald-500/5 ring-1 ring-emerald-500/30" : "border-border"
+                  "p-4 rounded-2xl border space-y-3.5 transition-all bg-card/90 backdrop-blur-md shadow-2xs",
+                  isReady 
+                    ? "border-emerald-500/40 bg-gradient-to-br from-emerald-500/5 via-card to-card ring-1 ring-emerald-500/20" 
+                    : "border-border/80"
                 )}
               >
                 {/* Header: Order Number, Channel Badge & Status */}
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <span className="font-mono font-black text-xs text-foreground">
+                    <span className="font-mono font-extrabold text-sm text-foreground tracking-tight">
                       {order.orderNumber}
                     </span>
                     <Badge 
-                      variant="outline" 
                       className={cn(
-                        "text-[9px] font-bold uppercase font-mono px-1.5 h-4.5",
-                        order.channel === 'DIRECT' ? "bg-blue-500/10 text-blue-600 border-blue-500/30" :
-                        order.channel === 'SWIGGY' ? "bg-orange-500/10 text-orange-600 border-orange-500/30" :
-                        "bg-red-500/10 text-red-600 border-red-500/30"
+                        "text-[9px] font-bold uppercase font-mono px-2 py-0.5 border-none",
+                        isDirectPhone ? "bg-blue-500/15 text-blue-600 dark:text-blue-400" :
+                        isSwiggy ? "bg-orange-500/15 text-orange-600 dark:text-orange-400" :
+                        "bg-red-500/15 text-red-600 dark:text-red-400"
                       )}
                     >
                       {order.channel}
@@ -192,84 +229,100 @@ export default function DeliveryPortalPage() {
 
                   <Badge 
                     className={cn(
-                      "text-[10px] font-mono font-bold h-5 px-2",
+                      "text-[10px] font-mono font-bold px-2 py-0.5 rounded-lg border-none flex items-center gap-1",
                       isDispatched ? "bg-muted text-muted-foreground" :
-                      isReady ? "bg-emerald-600 text-white animate-pulse" :
-                      "bg-amber-500 text-white"
+                      isReady ? "bg-emerald-500 text-white shadow-xs animate-pulse" :
+                      "bg-amber-500/15 text-amber-600 dark:text-amber-400"
                     )}
                   >
-                    {isDispatched ? 'DELIVERED' : isReady ? 'PACKED & READY' : 'COOKING'}
+                    {isDispatched ? (
+                      <>
+                        <CheckCircle2 className="w-3 h-3" />
+                        <span>DELIVERED</span>
+                      </>
+                    ) : isReady ? (
+                      <>
+                        <PackageCheck className="w-3 h-3" />
+                        <span>PACKED & READY</span>
+                      </>
+                    ) : (
+                      <>
+                        <Flame className="w-3 h-3 text-amber-500" />
+                        <span>COOKING</span>
+                      </>
+                    )}
                   </Badge>
                 </div>
 
-                {/* Customer Details */}
-                <div className="space-y-1.5 text-xs bg-muted/30 p-2.5 rounded-lg border border-border/60">
+                {/* Customer Details & Tactile Action Buttons */}
+                <div className="p-3 rounded-xl bg-muted/30 border border-border/50 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="font-extrabold text-foreground">{order.customerName}</span>
-                    <span className="text-[10px] font-bold text-muted-foreground font-mono">{order.brandName}</span>
+                    <span className="font-bold text-foreground text-xs">{order.customerName}</span>
+                    <Badge variant="outline" className="text-[10px] font-medium font-mono text-muted-foreground bg-background/50">
+                      {order.brandName}
+                    </Badge>
                   </div>
 
-                  {/* Phone Call Button */}
-                  {order.customerPhone && (
-                    <div className="flex items-center justify-between pt-1">
-                      <span className="font-mono text-muted-foreground flex items-center gap-1 text-[11px]">
-                        <Phone className="w-3 h-3 text-primary" />
-                        <span>{order.customerPhone}</span>
-                      </span>
-                      <a
-                        href={`tel:${order.customerPhone}`}
-                        className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline"
-                      >
-                        Call Customer
-                      </a>
+                  {/* Contact & Map Quick Action Pills */}
+                  {(order.customerPhone || order.customerAddress) && (
+                    <div className="pt-1 flex flex-wrap items-center gap-2">
+                      {order.customerPhone && (
+                        <a
+                          href={`tel:${order.customerPhone}`}
+                          className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg bg-background border border-border/80 text-[11px] font-semibold text-primary hover:bg-primary/5 active:scale-[0.98] transition-all shadow-2xs"
+                        >
+                          <Phone className="w-3 h-3 text-primary" />
+                          <span>Call {order.customerPhone}</span>
+                        </a>
+                      )}
+
+                      {order.customerAddress && (
+                        <a
+                          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.customerAddress)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg bg-background border border-border/80 text-[11px] font-semibold text-foreground hover:text-primary active:scale-[0.98] transition-all shadow-2xs"
+                        >
+                          <MapPin className="w-3 h-3 text-red-500" />
+                          <span>Open Maps</span>
+                        </a>
+                      )}
                     </div>
                   )}
 
-                  {/* Delivery Address & Maps Link */}
                   {order.customerAddress && (
-                    <div className="flex items-start justify-between pt-1 border-t border-border/40 gap-2">
-                      <div className="flex items-start gap-1 text-[11px] text-foreground">
-                        <MapPin className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />
-                        <span>{order.customerAddress}</span>
-                      </div>
-                      <a
-                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.customerAddress)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-0.5 text-[10px] font-bold text-primary shrink-0 hover:underline"
-                      >
-                        <Navigation className="w-3 h-3" />
-                        <span>Maps</span>
-                      </a>
-                    </div>
+                    <p className="text-[11px] text-muted-foreground leading-snug pt-0.5">
+                      {order.customerAddress}
+                    </p>
                   )}
                 </div>
 
                 {/* Ordered Items Summary */}
                 <div className="text-[11px] text-muted-foreground space-y-0.5">
-                  <span className="font-bold uppercase tracking-wider text-[9px] font-mono block text-muted-foreground/80">
+                  <span className="font-semibold uppercase tracking-wider text-[9px] font-mono block text-muted-foreground/80">
                     Items ({order.items.reduce((s, i) => s + i.quantity, 0)})
                   </span>
-                  <p className="line-clamp-2">
+                  <p className="line-clamp-2 text-foreground/80 font-medium">
                     {order.items.map((it) => `${it.quantity}x ${it.name}`).join(', ')}
                   </p>
                 </div>
 
-                {/* Delivery Action Button */}
+                {/* 44px Ergonomic Delivery Action Button */}
                 {!isDispatched && (
                   <div className="pt-1">
                     <Button
                       type="button"
                       onClick={() => handleMarkDelivered(order.id)}
                       className={cn(
-                        "w-full h-9 text-xs font-black gap-1.5 cursor-pointer shadow-xs",
+                        "w-full h-11 text-xs font-bold gap-2 rounded-xl cursor-pointer active:scale-[0.98] transition-all shadow-sm",
                         isReady 
-                          ? "bg-emerald-600 hover:bg-emerald-700 text-white" 
-                          : "bg-muted text-muted-foreground hover:bg-muted/80"
+                          ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-500/20" 
+                          : "bg-background border border-border hover:bg-muted text-foreground"
                       )}
                     >
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>{isReady ? 'Mark Handed Over / Delivered' : 'Mark Delivered (Ready Early)'}</span>
+                      <CheckCircle2 className={cn("w-4 h-4", isReady ? "text-white" : "text-primary")} />
+                      <span>{isReady ? 'Mark Handed Over / Dispatched' : 'Hand Over Early (Kitchen Override)'}</span>
+                      <ArrowRight className="w-3.5 h-3.5 ml-auto opacity-70" />
                     </Button>
                   </div>
                 )}
@@ -281,3 +334,4 @@ export default function DeliveryPortalPage() {
     </div>
   )
 }
+

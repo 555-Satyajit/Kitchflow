@@ -182,87 +182,98 @@ export function PurchaseOrderModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[95vw] max-w-xl max-h-[82dvh] p-0 flex flex-col overflow-hidden rounded-2xl border border-border shadow-2xl">
-        {/* Compact Clean Header */}
-        <div className="p-3.5 border-b border-border/80 bg-muted/20">
+      <DialogContent className="w-[95vw] max-w-lg max-h-[86dvh] p-0 flex flex-col overflow-hidden rounded-2xl border border-border/80 bg-card/95 backdrop-blur-xl shadow-2xl">
+        {/* Compact Clean Apple Header */}
+        <div className="p-4 border-b border-border/70 bg-muted/30">
           <DialogHeader className="p-0 text-left">
-            <DialogTitle className="text-base font-extrabold text-foreground flex items-center gap-2">
-              <ShoppingCart className="w-4 h-4 text-primary" />
-              <span>Stock Ordering</span>
-            </DialogTitle>
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-primary shrink-0" />
+              <DialogTitle className="text-base font-bold tracking-tight text-foreground flex items-center gap-2">
+                <span>Stock Ordering Indent</span>
+              </DialogTitle>
+            </div>
           </DialogHeader>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Pick items or select a pre-calculated stock forecast
+            Select manual quantities or auto-forecast restock buffers for vendors
           </p>
         </div>
 
-        {/* Clean Controls (Single Row + Filter Pills) */}
-        <div className="p-3 border-b border-border/80 bg-background space-y-2 shrink-0">
-          {/* Preset Mode Pills */}
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+        {/* Clean Controls (Apple HIG Segmented Control + Search) */}
+        <div className="p-3 border-b border-border/70 bg-background/80 space-y-2.5 shrink-0">
+          {/* Apple HIG Segmented Forecast Control */}
+          <div className="p-1 bg-muted/70 backdrop-blur-md rounded-xl border border-border/60 flex items-center gap-1 overflow-x-auto no-scrollbar">
             <button
               type="button"
               onClick={() => setHorizon('MANUAL')}
               className={cn(
-                "px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-all border cursor-pointer flex items-center gap-1",
-                horizon === 'MANUAL' ? "bg-foreground text-background border-foreground shadow-2xs" : "bg-muted/40 text-muted-foreground border-border/60 hover:text-foreground"
+                "flex-1 min-w-[70px] py-1.5 px-2.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center justify-center gap-1 active:scale-[0.98]",
+                horizon === 'MANUAL'
+                  ? "bg-background text-foreground shadow-xs font-bold"
+                  : "text-muted-foreground hover:text-foreground"
               )}
             >
-              <SlidersHorizontal className="w-3 h-3" />
-              <span>Manual Pick</span>
+              <SlidersHorizontal className="w-3 h-3 shrink-0" />
+              <span>Manual</span>
             </button>
             <button
               type="button"
               onClick={() => setHorizon('LOW_STOCK')}
               className={cn(
-                "px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-all border cursor-pointer flex items-center gap-1",
-                horizon === 'LOW_STOCK' ? "bg-red-600 text-white border-red-600 shadow-2xs" : "bg-muted/40 text-muted-foreground border-border/60 hover:text-foreground"
+                "flex-1 min-w-[80px] py-1.5 px-2.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center justify-center gap-1 active:scale-[0.98]",
+                horizon === 'LOW_STOCK'
+                  ? "bg-destructive text-destructive-foreground shadow-xs font-bold"
+                  : "text-muted-foreground hover:text-foreground"
               )}
             >
-              <AlertTriangle className="w-3 h-3" />
+              <AlertTriangle className="w-3 h-3 shrink-0" />
               <span>Low Stock</span>
             </button>
             <button
               type="button"
               onClick={() => setHorizon('WEEKLY')}
               className={cn(
-                "px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-all border cursor-pointer flex items-center gap-1",
-                horizon === 'WEEKLY' ? "bg-primary text-primary-foreground border-primary shadow-2xs" : "bg-muted/40 text-muted-foreground border-border/60 hover:text-foreground"
+                "flex-1 min-w-[75px] py-1.5 px-2.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center justify-center gap-1 active:scale-[0.98]",
+                horizon === 'WEEKLY'
+                  ? "bg-primary text-primary-foreground shadow-xs font-bold"
+                  : "text-muted-foreground hover:text-foreground"
               )}
             >
-              <Calendar className="w-3 h-3" />
-              <span>Weekly Buffer</span>
+              <Calendar className="w-3 h-3 shrink-0" />
+              <span>Weekly</span>
             </button>
             <button
               type="button"
               onClick={() => setHorizon('MONTHLY')}
               className={cn(
-                "px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-all border cursor-pointer flex items-center gap-1",
-                horizon === 'MONTHLY' ? "bg-primary text-primary-foreground border-primary shadow-2xs" : "bg-muted/40 text-muted-foreground border-border/60 hover:text-foreground"
+                "flex-1 min-w-[75px] py-1.5 px-2.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center justify-center gap-1 active:scale-[0.98]",
+                horizon === 'MONTHLY'
+                  ? "bg-primary text-primary-foreground shadow-xs font-bold"
+                  : "text-muted-foreground hover:text-foreground"
               )}
             >
-              <Layers className="w-3 h-3" />
-              <span>Monthly Bulk</span>
+              <Layers className="w-3 h-3 shrink-0" />
+              <span>Monthly</span>
             </button>
           </div>
 
-          {/* Search + Brand Dropdown in 1 neat row */}
+          {/* Search + Brand Dropdown */}
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
-              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/80 pointer-events-none" />
               <Input
-                placeholder="Search items (Paneer, Rice, Oil)..."
+                placeholder="Search items (Paneer, Rice, Mayo)..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-8 pl-8 pr-7 text-xs bg-muted/20 border-border/80"
+                className="h-9 pl-8 pr-7 text-xs bg-muted/40 hover:bg-muted/60 focus-visible:bg-background rounded-xl border-border/70 transition-all shadow-2xs"
               />
               {searchQuery && (
                 <button
                   type="button"
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-0.5"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-muted-foreground/20 hover:bg-muted-foreground/30 text-foreground flex items-center justify-center text-[10px] transition-colors cursor-pointer"
+                  title="Clear search"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  ✕
                 </button>
               )}
             </div>
@@ -270,7 +281,7 @@ export function PurchaseOrderModal({
             <select
               value={selectedBrand}
               onChange={(e) => setSelectedBrand(e.target.value)}
-              className="h-8 rounded-md border border-input bg-background px-2 text-xs font-semibold max-w-[130px] truncate"
+              className="h-9 rounded-xl border border-border/70 bg-background px-3 text-xs font-semibold max-w-[130px] truncate focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             >
               <option value="ALL">All Brands</option>
               {brands.map((b) => (
@@ -282,7 +293,7 @@ export function PurchaseOrderModal({
           </div>
         </div>
 
-        {/* Spacious Clean List */}
+        {/* Apple Inset Grouped Items List */}
         <div className="flex-1 overflow-y-auto p-3 space-y-2 text-xs no-scrollbar">
           {orderList.map(({ ingredient: ing, qty }) => {
             const isDepleted = ing.currentStock <= 0
@@ -293,38 +304,39 @@ export function PurchaseOrderModal({
               <div
                 key={ing.id}
                 className={cn(
-                  "p-3 rounded-xl border flex items-center justify-between gap-3 transition-colors bg-card",
+                  "p-3 rounded-2xl border flex items-center justify-between gap-3 transition-all",
                   qty > 0 
-                    ? "border-primary/80 bg-primary/5 shadow-2xs" 
+                    ? "border-primary/50 bg-primary/5 shadow-2xs" 
                     : isDepleted 
-                    ? "border-red-500/50 bg-red-500/5" 
-                    : "border-border/80"
+                    ? "border-destructive/40 bg-destructive/5" 
+                    : "border-border/70 bg-card hover:border-border"
                 )}
               >
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1 space-y-0.5">
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="font-bold text-xs text-foreground truncate">{ing.name}</span>
                     {isDepleted ? (
-                      <Badge variant="destructive" className="text-[9px] px-1 py-0 font-mono">
-                        DEPLETED
+                      <Badge className="bg-destructive/15 text-destructive border border-destructive/30 text-[9px] px-1.5 py-0 font-mono rounded-full">
+                        Depleted
                       </Badge>
                     ) : isLow ? (
-                      <Badge variant="outline" className="text-[9px] px-1 py-0 text-amber-600 border-amber-500/40 font-mono">
-                        LOW ({ing.currentStock} {ing.unit})
+                      <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 text-[9px] px-1.5 py-0 font-mono rounded-full">
+                        Low ({ing.currentStock} {ing.unit})
                       </Badge>
                     ) : null}
                   </div>
-                  <span className="text-[11px] text-muted-foreground font-mono block mt-0.5">
-                    Stock: {ing.currentStock} {ing.unit} • Rate: {formatCurrency(ing.costPerUnit)}/{ing.unit}
+                  <span className="text-[11px] text-muted-foreground font-mono block">
+                    Stock: {ing.currentStock} {ing.unit} &bull; Rate: {formatCurrency(ing.costPerUnit)}/{ing.unit}
                   </span>
                 </div>
 
-                {/* Tactile Stepper Control */}
-                <div className="flex items-center border border-border rounded-lg bg-background overflow-hidden shrink-0 shadow-2xs">
+                {/* Tactile Apple Stepper Control */}
+                <div className="flex items-center border border-border/80 rounded-xl bg-background overflow-hidden shrink-0 shadow-2xs h-8">
                   <button
                     type="button"
                     onClick={() => handleUpdateQty(ing.id, qty, -step)}
-                    className="px-2.5 py-1 text-xs font-bold text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer"
+                    className="w-7 h-full flex items-center justify-center text-xs font-bold text-muted-foreground hover:bg-muted hover:text-foreground active:scale-[0.9] transition-all cursor-pointer"
+                    title={`Minus ${step} ${ing.unit}`}
                   >
                     -
                   </button>
@@ -338,11 +350,12 @@ export function PurchaseOrderModal({
                   <button
                     type="button"
                     onClick={() => handleUpdateQty(ing.id, qty, step)}
-                    className="px-2.5 py-1 text-xs font-bold text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer"
+                    className="w-7 h-full flex items-center justify-center text-xs font-bold text-muted-foreground hover:bg-muted hover:text-foreground active:scale-[0.9] transition-all cursor-pointer"
+                    title={`Plus ${step} ${ing.unit}`}
                   >
                     +
                   </button>
-                  <span className="px-1.5 text-[10px] font-mono font-bold text-muted-foreground bg-muted/40 border-l border-border h-full flex items-center">
+                  <span className="px-2 text-[10px] font-mono font-bold text-muted-foreground bg-muted/40 border-l border-border/60 h-full flex items-center">
                     {ing.unit}
                   </span>
                 </div>
@@ -351,15 +364,15 @@ export function PurchaseOrderModal({
           })}
         </div>
 
-        {/* Clean, Non-Cramped Mobile Footer */}
-        <div className="p-3.5 sm:p-4 border-t border-border/80 bg-card shrink-0 space-y-2.5 shadow-lg z-10 safe-area-pb">
+        {/* Clean, Non-Cramped Apple HIG Footer */}
+        <div className="p-4 border-t border-border/70 bg-card/95 backdrop-blur-md shrink-0 space-y-3 shadow-lg z-10 pb-6 sm:pb-4">
           {/* Top Line: Total Summary & Quick Copy */}
           <div className="flex items-center justify-between">
             <div>
               <span className="text-[10px] uppercase font-bold text-muted-foreground block font-mono">
                 Order Total ({activePurchaseItems.length} items):
               </span>
-              <span className="text-base sm:text-lg font-black font-mono text-foreground">
+              <span className="text-base sm:text-lg font-black font-mono text-foreground tracking-tight">
                 {formatCurrency(totalEstimatedCost)}
               </span>
             </div>
@@ -370,20 +383,20 @@ export function PurchaseOrderModal({
               size="sm"
               onClick={handleCopyIndent}
               disabled={activePurchaseItems.length === 0}
-              className="text-xs h-8 px-3 gap-1.5 font-bold cursor-pointer"
+              className="text-xs h-9 px-3.5 gap-1.5 font-semibold rounded-xl border-border/80 hover:bg-muted active:scale-[0.98] transition-all cursor-pointer shadow-2xs"
             >
-              {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+              {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-muted-foreground" />}
               <span>{copied ? 'Copied' : 'Copy List'}</span>
             </Button>
           </div>
 
-          {/* Bottom Line: One Big, Obvious WhatsApp Order Action */}
+          {/* Bottom Line: Apple Tactile WhatsApp Order Action */}
           <Button
             type="button"
             size="default"
             onClick={handleShareWhatsApp}
             disabled={activePurchaseItems.length === 0}
-            className="w-full h-10 text-xs font-extrabold gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm cursor-pointer"
+            className="w-full h-11 text-xs sm:text-sm font-bold gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs active:scale-[0.98] transition-all cursor-pointer"
           >
             <Share2 className="w-4 h-4" />
             <span>Send Order via WhatsApp</span>

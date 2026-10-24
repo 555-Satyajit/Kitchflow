@@ -201,23 +201,23 @@ export function AppHeader() {
               </button>
             </div>
 
-            {/* High-Impact Emergency Pause Button (Compact on mobile, full on desktop) */}
+            {/* High-Impact Emergency Pause Button (Subtle & calm in resting state, bright pulsing red when paused) */}
             <Button
               size="sm"
-              variant="destructive"
+              variant="outline"
               onClick={() => setIsPauseDialogOpen(true)}
               className={cn(
-                "h-8 sm:h-9 px-2 sm:px-3 gap-1 sm:gap-1.5 font-bold shadow-xs cursor-pointer transition-transform active:scale-95 shrink-0 rounded-lg",
+                "h-8 sm:h-9 px-2.5 sm:px-3 gap-1 sm:gap-1.5 font-bold shadow-2xs cursor-pointer transition-all active:scale-95 shrink-0 rounded-lg",
                 isPausedAll || pausedPlatforms.swiggy || pausedPlatforms.zomato
-                  ? "bg-red-700 hover:bg-red-800 text-white animate-pulse ring-2 ring-red-400"
-                  : "bg-red-600 hover:bg-red-700 text-white"
+                  ? "bg-red-600 hover:bg-red-700 text-white animate-pulse ring-2 ring-red-400 border-red-600"
+                  : "border-red-500/30 text-red-600 dark:text-red-400 hover:bg-red-500/10 bg-background/50"
               )}
             >
-              <AlertOctagon className="w-4 h-4 shrink-0 stroke-[2.5]" />
-              <span className="hidden sm:inline font-extrabold uppercase tracking-wide text-xs">
+              <AlertOctagon className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 stroke-[2.2]" />
+              <span className="hidden sm:inline font-bold uppercase tracking-wide text-xs">
                 {isPausedAll ? t.pausedAll : t.emergencyPause}
               </span>
-              <span className="sm:hidden font-extrabold uppercase text-[11px]">
+              <span className="sm:hidden font-bold uppercase text-[11px]">
                 {isPausedAll ? 'Paused' : 'Pause'}
               </span>
             </Button>
@@ -236,190 +236,227 @@ export function AppHeader() {
                     <span className="hidden sm:inline text-xs font-bold">Menu</span>
                   </Button>
                 </SheetTrigger>
-                <SheetContent side="right" className="w-[300px] p-5 flex flex-col justify-between">
-                  <div className="space-y-6">
-                    <SheetHeader className="p-0 text-left border-b border-border/70 pb-3">
-                      <SheetTitle className="flex items-center">
-                        <div className="relative h-8 w-auto flex items-center">
-                          <Image 
-                            src="/logo.png?v=2" 
-                            alt="KitchFlow" 
-                            width={130} 
-                            height={32} 
-                            className="h-7 w-auto object-contain"
-                            unoptimized
-                          />
-                        </div>
-                      </SheetTitle>
-                    </SheetHeader>
-
-                    {/* Premium Executive Profile Card */}
-                    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-card via-muted/40 to-background p-4 border border-border/80 shadow-md">
-                      {/* Subtle accent glow in background */}
-                      <div className="absolute -top-6 -right-6 w-20 h-20 bg-primary/10 rounded-full blur-xl pointer-events-none" />
-
-                      <div className="relative flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          {/* Premium Avatar Ring */}
-                          <div className="relative">
-                            <div className="w-11 h-11 rounded-full bg-gradient-to-tr from-primary/30 to-amber-500/20 border-2 border-primary/40 flex items-center justify-center shadow-inner">
-                              <span className="font-black text-sm text-foreground tracking-wider font-mono">
-                                U
-                              </span>
-                            </div>
-                            {/* Live pulsing online indicator dot */}
-                            <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-background shadow-xs">
-                              <span className="absolute inset-0 rounded-full bg-emerald-400 animate-ping opacity-75" />
-                            </span>
-                          </div>
-
-                          {/* Profile Details */}
-                          <div className="space-y-0.5">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-sm font-black text-foreground tracking-tight">
-                                Usalla
-                              </span>
-                              <span className="text-[9px] font-bold uppercase tracking-wider font-mono px-1.5 py-0.5 rounded-full bg-primary/15 text-primary border border-primary/25">
-                                Admin
-                              </span>
-                            </div>
-                            <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1">
-                              Kitchen Manager
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Status Indicator */}
-                        <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                          <span className="text-[10px] font-mono font-bold text-emerald-600">Active</span>
-                        </div>
+                <SheetContent side="right" className="w-[88vw] max-w-sm sm:w-[360px] p-0 flex flex-col justify-between rounded-l-2xl border-l border-border/80 bg-background/95 backdrop-blur-xl">
+                  {/* Scrollable Content Container */}
+                  <div className="p-5 space-y-5 overflow-y-auto max-h-[calc(100vh-60px)] no-scrollbar">
+                    {/* Drawer Header with Logo & Language Segmented Switcher */}
+                    <div className="border-b border-border/70 pb-3 flex items-center justify-between">
+                      <div className="relative h-7 w-auto flex items-center">
+                        <Image 
+                          src="/logo.png?v=2" 
+                          alt="KitchFlow" 
+                          width={120} 
+                          height={30} 
+                          className="h-6 w-auto object-contain"
+                          unoptimized
+                        />
                       </div>
-                    </div>
 
-
-
-
-                    {/* Delivery Boy / Rider Portal */}
-                    <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-between">
-                      <div className="space-y-0.5">
-                        <span className="font-bold text-xs text-foreground flex items-center gap-1.5">
-                          <Bike className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                          <span>Delivery Boy Portal</span>
-                        </span>
-                        <p className="text-[10px] text-muted-foreground">
-                          Direct phone delivery & rider dispatch runs.
-                        </p>
-                      </div>
-                      <Link
-                        href="/delivery"
-                        onClick={() => setIsMobileMenuOpen(false)}
-                        className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white cursor-pointer shadow-2xs"
+                      {/* 1-Tap iOS Segmented Control for Language */}
+                      <div 
+                        role="tablist" 
+                        aria-label="Language selection"
+                        className="inline-flex items-center p-0.5 bg-muted/70 rounded-lg border border-border/50 shadow-2xs"
                       >
-                        <span>Open</span>
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      </Link>
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={language === 'EN'}
+                          onClick={() => setLanguage('EN')}
+                          className={cn(
+                            "px-2 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer",
+                            language === 'EN'
+                              ? "bg-card text-foreground shadow-2xs"
+                              : "text-muted-foreground hover:text-foreground"
+                          )}
+                        >
+                          EN
+                        </button>
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={language === 'HI'}
+                          onClick={() => setLanguage('HI')}
+                          className={cn(
+                            "px-2 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer",
+                            language === 'HI'
+                              ? "bg-card text-foreground shadow-2xs"
+                              : "text-muted-foreground hover:text-foreground"
+                          )}
+                        >
+                          हिंदी
+                        </button>
+                      </div>
                     </div>
 
-                    {/* Supplier Orders & Stock Procurement (PO Manager) */}
-                    <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2.5">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
-                          <Truck className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                          <span>Supplier Orders & POs</span>
+                    {/* Apple Style Clean Profile Card */}
+                    <div className="p-3.5 rounded-2xl bg-card border border-border/80 shadow-xs flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="relative">
+                          <div className="w-10 h-10 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center font-bold text-sm text-primary font-mono shadow-2xs">
+                            U
+                          </div>
+                          <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-card" />
                         </div>
-                        {purchaseOrders.filter((po) => po.status === 'PENDING_DELIVERY').length > 0 ? (
-                          <Badge className="bg-amber-500 text-white font-mono text-[10px] h-4.5 px-1.5">
-                            {purchaseOrders.filter((po) => po.status === 'PENDING_DELIVERY').length} Pending
-                          </Badge>
-                        ) : (
-                          <span className="text-[10px] text-muted-foreground font-mono">
-                            All Stocked
+
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm font-bold text-foreground">
+                              Usalla
+                            </span>
+                            <span className="text-[9px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.2 rounded-full bg-muted text-muted-foreground border border-border/60">
+                              Admin
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-muted-foreground">
+                            Kitchen Manager • {userRole === 'OWNER' ? 'Owner Access' : 'Cook Access'}
                           </span>
-                        )}
-                      </div>
-
-                      <p className="text-[11px] text-muted-foreground leading-snug">
-                        Track WhatsApp purchase indents and tap &quot;Mark Received&quot; when the supply van arrives.
-                      </p>
-
-                      <div className="grid grid-cols-2 gap-1.5 pt-1">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setIsMobileMenuOpen(false)
-                            setIsPOManagerOpen(true)
-                          }}
-                          className="h-8 text-xs font-bold gap-1 bg-background hover:bg-muted border-border/80 cursor-pointer"
-                        >
-                          <span>Manage POs</span>
-                          <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
-                        </Button>
-
-                        <Button
-                          size="sm"
-                          onClick={() => {
-                            setIsMobileMenuOpen(false)
-                            setIsCreatePOOpen(true)
-                          }}
-                          className="h-8 text-xs font-bold gap-1 bg-amber-600 hover:bg-amber-700 text-white cursor-pointer"
-                        >
-                          <span>+ New Indent</span>
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* Quick Shift Wastage & Spoilage Button */}
-                    <div className="p-3 rounded-xl bg-destructive/5 border border-destructive/20 flex items-center justify-between">
-                      <div className="space-y-0.5">
-                        <span className="font-bold text-xs text-foreground flex items-center gap-1.5">
-                          <Trash2 className="w-3.5 h-3.5 text-destructive" />
-                          <span>Shift Wastage Log</span>
-                        </span>
-                        <p className="text-[10px] text-muted-foreground">
-                          Record burnt, spilled or spoiled food items.
-                        </p>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setIsMobileMenuOpen(false)
-                          setIsWastageOpen(true)
-                        }}
-                        className="h-7 text-xs font-bold border-destructive/30 hover:bg-destructive/10 text-destructive cursor-pointer"
-                      >
-                        + Log Waste
-                      </Button>
-                    </div>
-
-                    {/* Active Multi-Brand Summary */}
-                    <div className="p-3 rounded-xl bg-muted/40 border border-border/80 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
-                          <Store className="w-3.5 h-3.5 text-primary" />
-                          <span>Connected Brands ({brands.length})</span>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
+                      </div>
+
+                      <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className="text-[10px] font-mono font-bold text-emerald-700 dark:text-emerald-400">Online</span>
+                      </div>
+                    </div>
+
+                    {/* iOS Inset Grouped Section: Quick Portals & Shift Tools */}
+                    <div className="space-y-2">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 px-1 font-mono">
+                        Shift & Operations
+                      </span>
+
+                      <div className="rounded-2xl border border-border/80 bg-card overflow-hidden divide-y divide-border/50 shadow-xs">
+                        {/* Delivery Boy Portal Row */}
+                        <Link
+                          href="/delivery"
+                          onClick={() => setIsMobileMenuOpen(false)}
+                          className="flex items-center justify-between p-3.5 hover:bg-muted/40 transition-colors cursor-pointer group"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 border border-blue-500/20 shadow-2xs">
+                              <Bike className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-foreground group-hover:text-primary transition-colors">
+                                Delivery Boy Portal
+                              </p>
+                              <p className="text-[10px] text-muted-foreground truncate">
+                                Direct phone delivery & rider dispatch runs
+                              </p>
+                            </div>
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-muted-foreground/60 shrink-0" />
+                        </Link>
+
+                        {/* Supplier Orders & POs Row */}
+                        <div className="p-3.5 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20 shadow-2xs">
+                                <Truck className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <p className="text-xs font-bold text-foreground">
+                                  Supplier Orders & POs
+                                </p>
+                                <p className="text-[10px] text-muted-foreground">
+                                  Track WhatsApp indents & inbound supply
+                                </p>
+                              </div>
+                            </div>
+                            {purchaseOrders.filter((po) => po.status === 'PENDING_DELIVERY').length > 0 ? (
+                              <Badge className="bg-amber-500/20 text-amber-700 dark:text-amber-400 font-mono text-[10px] h-4.5 px-1.5 border border-amber-500/30">
+                                {purchaseOrders.filter((po) => po.status === 'PENDING_DELIVERY').length} Due
+                              </Badge>
+                            ) : (
+                              <span className="text-[10px] text-muted-foreground font-mono">
+                                In Stock
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 pt-1">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setIsMobileMenuOpen(false)
+                                setIsPOManagerOpen(true)
+                              }}
+                              className="h-8 text-xs font-semibold border-border/80 hover:bg-muted cursor-pointer rounded-lg"
+                            >
+                              <span>Manage POs</span>
+                            </Button>
+
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                setIsMobileMenuOpen(false)
+                                setIsCreatePOOpen(true)
+                              }}
+                              className="h-8 text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer rounded-lg shadow-2xs"
+                            >
+                              <span>+ New Indent</span>
+                            </Button>
+                          </div>
+                        </div>
+
+                        {/* Shift Wastage Row */}
+                        <div className="flex items-center justify-between p-3.5">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-8 h-8 rounded-xl bg-destructive/10 text-destructive flex items-center justify-center shrink-0 border border-destructive/20 shadow-2xs">
+                              <Trash2 className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-foreground">
+                                Shift Wastage Log
+                              </p>
+                              <p className="text-[10px] text-muted-foreground truncate">
+                                Record burnt, spilled or expired food
+                              </p>
+                            </div>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setIsMobileMenuOpen(false)
+                              setIsWastageOpen(true)
+                            }}
+                            className="h-7 text-xs font-bold border-destructive/30 hover:bg-destructive/10 text-destructive cursor-pointer rounded-lg shrink-0"
+                          >
+                            + Log Waste
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Connected Brands Inset Group */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between px-1">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 font-mono">
+                          Connected Brands ({brands.length})
+                        </span>
+                        <button
+                          type="button"
                           onClick={() => {
                             setIsMobileMenuOpen(false)
                             setIsBrandModalOpen(true)
                           }}
-                          className="h-6 text-[11px] px-2 text-primary font-bold hover:bg-primary/10 gap-1 cursor-pointer"
+                          className="text-[11px] text-primary font-bold hover:underline cursor-pointer"
                         >
-                          <span>+ Manage</span>
-                        </Button>
+                          Manage
+                        </button>
                       </div>
-                      <div className="flex flex-wrap gap-1">
+
+                      <div className="p-3 rounded-2xl bg-card border border-border/80 shadow-xs flex flex-wrap gap-1.5">
                         {brands.map((b) => (
                           <span
                             key={b.id}
-                            className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-background border border-border/70 text-foreground/80 flex items-center gap-1"
+                            className="text-[10px] font-medium px-2 py-0.5 rounded-lg bg-muted/60 border border-border/70 text-foreground/80 flex items-center gap-1.5"
                           >
-                            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: b.color }} />
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: b.color }} />
                             <span>{b.name}</span>
                           </span>
                         ))}
@@ -428,7 +465,7 @@ export function AppHeader() {
                   </div>
 
                   {/* Drawer Footer Status */}
-                  <div className="pt-4 border-t border-border/70 text-center">
+                  <div className="p-4 border-t border-border/70 text-center bg-muted/20">
                     <p className="text-[10px] text-muted-foreground font-mono">
                       KitchFlow OS • v2.4 Multi-Brand
                     </p>

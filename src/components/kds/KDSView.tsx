@@ -163,91 +163,97 @@ export function KDSView({
 
   return (
     <div className="space-y-5">
-      {/* Overdue Manager Notification Alert Banner */}
+      {/* Sleek Apple HIG Overdue Alert Banner (Compact, non-intrusive notification) */}
       {overdueOrders.length > 0 && !managerAlertDismissed && (
-        <div className="flex items-center justify-between p-3.5 rounded-xl border-2 border-red-600 bg-red-100/95 dark:bg-red-950/80 text-red-900 dark:text-red-100 text-xs shadow-md animate-pulse">
-          <div className="flex items-center space-x-2.5">
-            <BellRing className="w-5 h-5 shrink-0 text-red-600 animate-bounce" />
-            <div>
-              <span className="font-extrabold text-sm block">
-                🚨 MANAGER ALERT: {overdueOrders.length} {overdueOrders.length === 1 ? 'Order Has' : 'Orders Have'} Breached SLA!
+        <div className="flex items-center justify-between p-3 px-3.5 rounded-xl border border-red-500/50 bg-red-500/10 dark:bg-red-950/40 text-red-900 dark:text-red-100 text-xs shadow-xs transition-all">
+          <div className="flex items-center space-x-2.5 min-w-0 flex-1 mr-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-ping shrink-0" />
+            <div className="min-w-0">
+              <span className="font-bold text-xs text-red-700 dark:text-red-300 block truncate">
+                SLA Breached: Ticket {overdueOrders.map((o) => o.orderNumber).join(', ')}
               </span>
-              <span className="font-medium text-xs opacity-90">
-                Ticket {overdueOrders.map((o) => o.orderNumber).join(', ')} exceeded target prep time. Immediate expediter intervention required.
+              <span className="text-[11px] text-muted-foreground block truncate">
+                Target cook time exceeded. Prioritize on station.
               </span>
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={() => playAlertChime()}
-              className="text-xs h-7 px-2 font-bold"
-            >
-              Sound Siren
-            </Button>
+          <div className="flex items-center gap-1.5 shrink-0">
             <Button
               size="sm"
               variant="outline"
-              onClick={() => setManagerAlertDismissed(true)}
-              className="text-xs h-7 px-2 bg-background text-foreground"
+              onClick={() => playAlertChime()}
+              className="text-xs h-7 px-2.5 font-bold border-red-500/30 hover:bg-red-500/15 text-red-600 dark:text-red-400 bg-background/50 rounded-lg cursor-pointer"
             >
-              Acknowledge
+              Chime
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setManagerAlertDismissed(true)}
+              className="text-xs h-7 px-2 text-muted-foreground hover:text-foreground cursor-pointer rounded-lg"
+            >
+              Dismiss
             </Button>
           </div>
         </div>
       )}
 
-      {/* Top Header & Station Filter */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* Top Header & Station Filter Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-foreground">
-            Kitchen Display System (KDS)
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
+            Kitchen Display (KDS)
           </h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Live SLA timers, multi-station touch tickets, and aggregated line batches
+          <p className="text-xs text-muted-foreground hidden sm:block mt-0.5">
+            Multi-station touch cook tickets & aggregated line batches
           </p>
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto min-w-0">
           {/* Sound Notification Alert Toggle */}
-          <Button
-            variant="outline"
-            size="sm"
+          <button
+            type="button"
             onClick={() => {
               setSoundEnabled(!soundEnabled)
               playAlertChime()
             }}
-            className="text-xs h-8 gap-1.5 font-medium shrink-0"
-            title="Toggle ticket chime audio"
+            className="inline-flex items-center justify-center h-9 w-9 rounded-xl border border-border/80 bg-background hover:bg-muted text-foreground transition-colors cursor-pointer shadow-2xs shrink-0"
+            title={soundEnabled ? "Audio chimes active (Click to mute)" : "Audio muted (Click to enable)"}
+            aria-label="Toggle chime"
           >
             {soundEnabled ? (
-              <>
-                <Volume2 className="w-3.5 h-3.5 text-emerald-500" />
-                <span className="hidden md:inline">Chime</span>
-              </>
+              <Volume2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
             ) : (
-              <>
-                <Bell className="w-3.5 h-3.5 text-muted-foreground" />
-                <span className="hidden md:inline">Muted</span>
-              </>
+              <Bell className="w-4 h-4 text-muted-foreground" />
             )}
-          </Button>
+          </button>
 
-          {/* Station Segment Control (Fully touch & mouse scrollable with full station name visibility) */}
-          <div className="flex-1 min-w-0 overflow-x-auto overflow-y-hidden touch-pan-x overscroll-x-contain py-1">
-            <div className="flex items-center gap-1.5 bg-muted/60 p-1 rounded-lg border border-border/80 w-max">
-              {stations.map((st) => (
-                <Button
-                  key={st}
-                  variant={selectedStation === st ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => setSelectedStation(st)}
-                  className="text-xs h-8 px-3 font-semibold tracking-wide shrink-0 whitespace-nowrap active:scale-95 transition-transform"
-                >
-                  {formatStationName(st)}
-                </Button>
-              ))}
+          {/* Apple HIG Scrollable Station Segmented Pill Control */}
+          <div className="flex-1 min-w-0 overflow-x-auto touch-pan-x no-scrollbar py-0.5">
+            <div 
+              role="tablist"
+              aria-label="Kitchen Stations"
+              className="inline-flex items-center p-1 bg-muted/60 dark:bg-muted/40 rounded-xl border border-border/60 shadow-xs gap-1"
+            >
+              {stations.map((st) => {
+                const isSelected = selectedStation === st
+                return (
+                  <button
+                    key={st}
+                    role="tab"
+                    aria-selected={isSelected}
+                    onClick={() => setSelectedStation(st)}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer min-h-[32px] flex items-center justify-center",
+                      isSelected
+                        ? "bg-card text-foreground shadow-xs border border-border/50 font-bold"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
+                    )}
+                  >
+                    <span>{formatStationName(st)}</span>
+                  </button>
+                )
+              })}
             </div>
           </div>
         </div>
@@ -302,91 +308,108 @@ export function KDSView({
               <Card
                 key={order.id}
                 className={cn(
-                  "overflow-hidden border-2 transition-all flex flex-col justify-between shadow-sm",
+                  "overflow-hidden border rounded-2xl transition-all flex flex-col justify-between shadow-xs bg-card",
                   sla.state === 'RED'
-                    ? "border-red-500 bg-red-50/70 dark:bg-red-950/30"
+                    ? "border-red-500/70 ring-1 ring-red-500/20"
                     : sla.state === 'AMBER'
-                    ? "border-amber-500 bg-amber-50/70 dark:bg-amber-950/30"
+                    ? "border-amber-500/70 ring-1 ring-amber-500/20"
                     : allDone
-                    ? "border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/30"
-                    : "border-emerald-500/60 bg-emerald-50/30 dark:bg-emerald-950/15"
+                    ? "border-emerald-500/70 ring-1 ring-emerald-500/20"
+                    : "border-border/80"
                 )}
               >
                 <div>
-                  {/* Top Ticket Header - Full Tint by Urgency */}
+                  {/* Apple HIG Ticket Header - Clean Two-Column Hierarchy */}
                   <div className={cn(
-                    "p-4 pb-3 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2.5 border-b-2",
+                    "p-3.5 pb-3 flex items-start justify-between gap-3 border-b transition-colors",
                     sla.state === 'RED'
-                      ? "bg-red-100/90 dark:bg-red-900/50 border-red-200 dark:border-red-800"
+                      ? "bg-red-500/10 border-red-200 dark:border-red-900/50"
                       : sla.state === 'AMBER'
-                      ? "bg-amber-100/90 dark:bg-amber-900/50 border-amber-200 dark:border-amber-800"
-                      : "bg-emerald-100/80 dark:bg-emerald-900/40 border-emerald-200 dark:border-emerald-800"
+                      ? "bg-amber-500/10 border-amber-200 dark:border-amber-900/50"
+                      : allDone
+                      ? "bg-emerald-500/10 border-emerald-200 dark:border-emerald-900/50"
+                      : "bg-muted/30 border-border/60"
                   )}>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-lg font-black text-foreground font-mono tracking-tight whitespace-nowrap">
-                        {order.orderNumber}
-                      </span>
-                      <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-background/80 text-foreground border border-border shadow-2xs whitespace-nowrap">
-                        {order.brandName}
-                      </span>
-                      <span className={cn(
-                        "text-[10px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider text-white whitespace-nowrap",
-                        order.channel === 'SWIGGY' ? "bg-orange-600" : order.channel === 'ZOMATO' ? "bg-red-600" : "bg-neutral-800"
-                      )}>
-                        {order.channel}
-                      </span>
+                    {/* Left: Channel, Order Number & Brand */}
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={cn(
+                          "text-[9px] uppercase font-black tracking-wider px-1.5 py-0.5 rounded-md text-white font-mono shrink-0 shadow-2xs",
+                          order.channel === 'SWIGGY' ? "bg-orange-600" : order.channel === 'ZOMATO' ? "bg-red-600" : "bg-neutral-800"
+                        )}>
+                          {order.channel}
+                        </span>
+                        <span className="text-base font-extrabold text-foreground font-mono tracking-tight">
+                          {order.orderNumber}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <span className="font-bold text-foreground">{order.brandName}</span>
+                        <span>•</span>
+                        <span className="truncate max-w-[130px] font-medium">{order.customerName}</span>
+                      </div>
                     </div>
 
-                    {/* Bold Urgency Countdown Pill */}
-                    <div className={cn(
-                      "flex items-center space-x-1.5 text-xs px-2.5 py-1 rounded-lg border-2 font-bold shadow-2xs shrink-0 whitespace-nowrap font-mono",
-                      sla.state === 'RED'
-                        ? "bg-red-600 text-white border-red-700 animate-pulse"
-                        : sla.state === 'AMBER'
-                        ? "bg-amber-500 text-black border-amber-600"
-                        : "bg-emerald-600 text-white border-emerald-700"
-                    )}>
-                      <Clock className="w-4 h-4 shrink-0" />
-                      <span>{sla.isOverdue ? `LATE: ${sla.formatted}` : sla.formatted}</span>
+                    {/* Right: Urgent SLA Countdown Pill */}
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      <span className={cn(
+                        "text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 font-mono shadow-2xs border",
+                        sla.state === 'RED'
+                          ? "bg-red-600 text-white border-red-700 animate-pulse"
+                          : sla.state === 'AMBER'
+                          ? "bg-amber-500/20 text-amber-800 dark:text-amber-300 border-amber-500/40"
+                          : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30"
+                      )}>
+                        <Clock className="w-3 h-3" />
+                        <span>{sla.isOverdue ? `LATE: ${sla.formatted}` : sla.formatted}</span>
+                      </span>
+
+                      {allDone && (
+                        <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5 font-mono">
+                          <CheckCircle2 className="w-3 h-3" />
+                          <span>All Items Cooked</span>
+                        </span>
+                      )}
                     </div>
                   </div>
 
-                  {/* Cook Checklist Items - Entire Card Tappable (54px+ min touch target) */}
-                  <div className="p-3.5 sm:p-4 space-y-2.5">
+                  {/* Cook Checklist Items - Clean, edge-to-edge interactive tap rows */}
+                  <div className="p-3 divide-y divide-border/40">
                     {relevantItems.map((item) => (
                       <button
                         type="button"
                         key={item.id}
                         onClick={() => onToggleStationItem(order.id, item.id)}
                         className={cn(
-                          "w-full flex items-center justify-between p-3.5 sm:p-4 rounded-xl border-2 text-left transition-all cursor-pointer min-h-[58px] gap-3 active:scale-[0.98]",
+                          "w-full flex items-center justify-between p-3 rounded-xl text-left transition-all cursor-pointer min-h-[56px] gap-3 active:scale-[0.98] group",
                           item.stationDone
-                            ? "bg-muted/60 border-border/80 text-muted-foreground opacity-60"
-                            : "bg-card border-foreground/20 text-foreground hover:border-foreground/40 shadow-xs"
+                            ? "bg-muted/40 text-muted-foreground opacity-60"
+                            : "hover:bg-muted/30 text-foreground"
                         )}
                       >
-                        <div className="flex items-center space-x-3.5 min-w-0 flex-1">
+                        <div className="flex items-center space-x-3 min-w-0 flex-1">
                           <span className={cn(
-                            "text-lg font-black shrink-0 px-2.5 py-1 rounded-lg font-mono",
+                            "text-sm font-black shrink-0 w-8 h-8 rounded-lg font-mono flex items-center justify-center transition-colors shadow-2xs",
                             item.stationDone
                               ? "bg-muted text-muted-foreground line-through"
-                              : "bg-foreground text-background"
+                              : "bg-primary text-primary-foreground"
                           )}>
                             {item.quantity}x
                           </span>
                           <div className="min-w-0 flex-1">
                             <p className={cn(
-                              "font-extrabold text-base leading-tight break-words",
+                              "font-bold text-sm leading-snug break-words transition-colors",
                               item.stationDone && "line-through text-muted-foreground"
                             )}>
                               {item.name}
                             </p>
-                            <div className="flex items-center gap-2 mt-1 flex-wrap">
-                              <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-muted text-foreground/80 border border-border/60">
+                            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                              <span className="text-[10px] font-medium text-muted-foreground font-mono">
                                 Station: {formatStationName(item.station)}
                               </span>
                               {item.secondaryStations && item.secondaryStations.length > 0 && (
-                                <span className="text-xs font-semibold text-muted-foreground">
+                                <span className="text-[10px] text-muted-foreground/80">
                                   → {item.secondaryStations.map((s) => formatStationName(s)).join(', ')}
                                 </span>
                               )}
@@ -394,32 +417,36 @@ export function KDSView({
                           </div>
                         </div>
 
-                        {/* Large 32px Touch Target Checkbox */}
+                        {/* Large Touch-Friendly Check Indicator */}
                         <div className={cn(
-                          "w-8 h-8 rounded-lg flex items-center justify-center border-2 shrink-0 transition-all",
+                          "w-7 h-7 rounded-lg border-2 flex items-center justify-center shrink-0 transition-all",
                           item.stationDone
-                            ? "bg-emerald-600 border-emerald-600 text-white"
-                            : "border-foreground/30 bg-background"
+                            ? "bg-emerald-600 border-emerald-600 text-white shadow-2xs"
+                            : "border-border/80 bg-background group-hover:border-primary/60"
                         )}>
-                          {item.stationDone && <Check className="w-5 h-5 stroke-[3]" />}
+                          {item.stationDone ? (
+                            <Check className="w-4 h-4 stroke-[3]" />
+                          ) : (
+                            <div className="w-2 h-2 rounded-sm bg-transparent group-hover:bg-primary/20" />
+                          )}
                         </div>
                       </button>
                     ))}
                   </div>
                 </div>
 
-                {/* Footer Action */}
-                <div className="p-3.5 sm:p-4 pt-3 border-t-2 border-border/60 bg-background/50">
+                {/* Footer Ready Trigger */}
+                <div className="p-3 border-t border-border/60 bg-muted/15">
                   {allDone ? (
                     <Button
                       onClick={() => onMarkOrderReady(order.id)}
-                      className="w-full text-sm h-12 font-bold gap-2 shadow-sm bg-emerald-600 hover:bg-emerald-700 text-white"
+                      className="w-full text-xs h-10 font-bold gap-2 shadow-xs bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-all active:scale-95 cursor-pointer"
                     >
-                      <CheckCircle2 className="w-5 h-5" />
+                      <CheckCircle2 className="w-4 h-4" />
                       <span>Ready for Packing & Dispatch</span>
                     </Button>
                   ) : (
-                    <div className="text-center text-xs font-bold text-muted-foreground py-1.5">
+                    <div className="text-center text-[11px] font-medium text-muted-foreground py-1">
                       Tap anywhere on an item to check it off
                     </div>
                   )}

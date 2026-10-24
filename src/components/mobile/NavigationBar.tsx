@@ -50,8 +50,8 @@ export function NavigationBar() {
 
   return (
     /* Visible on mobile, tablets, and iPads. Hidden on laptops & desktops (lg:hidden) */
-    <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-lg border-t border-border/80 px-2 sm:px-4 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-lg">
-      <div className="max-w-xl mx-auto grid grid-cols-5 gap-1">
+    <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-background/85 backdrop-blur-xl border-t border-border/60 px-3 sm:px-6 pt-1.5 pb-[max(0.6rem,env(safe-area-inset-bottom))] shadow-xs">
+      <div className="max-w-md mx-auto grid grid-cols-5 gap-0.5">
         {tabs.map((tab) => {
           const Icon = tab.icon
           const isActive = pathname === tab.href || (pathname === '/' && tab.href === '/orders')
@@ -61,27 +61,33 @@ export function NavigationBar() {
               key={tab.href}
               href={tab.href}
               className={cn(
-                "flex flex-col items-center justify-center py-1 px-1 rounded-xl transition-all relative min-h-[48px]",
+                "flex flex-col items-center justify-center py-1 rounded-xl transition-colors duration-150 relative min-h-[46px]",
                 isActive 
-                  ? "text-primary font-bold bg-primary/10 shadow-2xs" 
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                  ? "text-primary" 
+                  : "text-muted-foreground/80 hover:text-foreground"
               )}
             >
-              <div className="relative">
-                <Icon className={cn("w-5 h-5", isActive ? "stroke-[2.5]" : "stroke-[1.8]")} />
+              <div className="relative flex items-center justify-center">
+                <Icon className={cn("w-5 h-5 transition-transform duration-150", isActive ? "stroke-[2.4] scale-105" : "stroke-[1.8]")} />
                 {Boolean(tab.badge && tab.badge > 0) && (
-                  <Badge 
-                    variant={isActive ? "default" : "secondary"}
+                  <span 
                     className={cn(
-                      "absolute -top-1.5 -right-3 h-4 min-w-4 px-1 text-[9px] font-mono leading-none flex items-center justify-center rounded-full font-bold",
-                      isActive ? "bg-primary text-primary-foreground" : "bg-muted-foreground/20 text-foreground"
+                      "absolute -top-1 -right-2.5 h-4 min-w-[16px] px-1 text-[9px] font-mono leading-none flex items-center justify-center rounded-full font-bold shadow-2xs",
+                      isActive 
+                        ? "bg-primary text-primary-foreground" 
+                        : "bg-muted-foreground/30 text-foreground"
                     )}
                   >
                     {tab.badge}
-                  </Badge>
+                  </span>
                 )}
               </div>
-              <span className="text-[10px] mt-1 tracking-tight leading-none font-medium">{tab.label}</span>
+              <span className={cn(
+                "text-[10px] mt-1 tracking-tight leading-none transition-colors",
+                isActive ? "font-bold text-primary" : "font-medium text-muted-foreground"
+              )}>
+                {tab.label}
+              </span>
             </Link>
           )
         })}

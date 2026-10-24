@@ -90,26 +90,26 @@ export function OrdersQueueView({
 
   return (
     <div className="space-y-5">
-      {/* Top Banner / Metrics & Action Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-1">
+      {/* Apple HIG Header & Action Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-1">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-foreground">
-            Live Order Dispatch Queue
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
+            Live Orders
           </h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Real-time multi-brand routing and aggregator synchronization
+          <p className="text-xs text-muted-foreground hidden sm:block mt-0.5">
+            Real-time multi-brand routing and kitchen dispatch
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Link href="/pos">
+        <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 w-full sm:w-auto">
+          <Link href="/pos" className="w-full sm:w-auto">
             <Button
               variant="default"
               size="sm"
-              className="text-xs h-9 gap-1.5 font-bold shadow-xs bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+              className="w-full sm:w-auto h-10 px-4 gap-2 font-bold shadow-xs bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer rounded-xl transition-all active:scale-95"
             >
               <ShoppingBag className="w-4 h-4" />
-              <span>+ New Order (POS)</span>
+              <span>New Order</span>
             </Button>
           </Link>
 
@@ -117,58 +117,101 @@ export function OrdersQueueView({
             onClick={onSimulateNewOrder}
             variant="outline"
             size="sm"
-            className="text-xs h-9 gap-1.5 font-medium shadow-xs"
+            className="w-full sm:w-auto h-10 px-4 gap-2 font-semibold shadow-2xs border-border/80 hover:bg-muted bg-background/50 rounded-xl transition-all active:scale-95 cursor-pointer text-foreground"
           >
-            <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">Simulate Order</span>
-            <span className="sm:hidden">Simulate</span>
+            <Plus className="w-4 h-4 text-muted-foreground" />
+            <span>Simulate</span>
           </Button>
         </div>
       </div>
 
-      {/* Filter Tabs & Count Badges */}
-      <div className="flex items-center justify-between border-b border-border pb-3 overflow-x-auto no-scrollbar">
-        <div className="flex items-center gap-1.5 shrink-0">
-          <Button
-            variant={filter === 'ALL' ? 'secondary' : 'ghost'}
-            size="sm"
+      {/* Apple HIG Segmented Control: Queue Filter & SLA Indicator */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/80 pb-3">
+        <div 
+          role="tablist" 
+          aria-label="Order status filter"
+          className="flex items-center p-1 bg-muted/60 dark:bg-muted/40 rounded-xl border border-border/60 shadow-xs w-full sm:w-auto"
+        >
+          <button
+            role="tab"
+            aria-selected={filter === 'ALL'}
             onClick={() => setFilter('ALL')}
-            className="text-xs h-8 px-3 font-medium gap-1.5 shrink-0"
+            className={cn(
+              "flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 cursor-pointer min-h-[34px]",
+              filter === 'ALL'
+                ? "bg-card text-foreground shadow-xs border border-border/50 font-bold"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
+            )}
           >
-            <span>All Orders</span>
-            <Badge variant="outline" className="text-[10px] h-4 px-1 leading-none font-mono">
+            <span>All</span>
+            <span
+              className={cn(
+                "text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full",
+                filter === 'ALL'
+                  ? "bg-muted text-foreground"
+                  : "bg-muted/60 text-muted-foreground"
+              )}
+            >
               {orders.length}
-            </Badge>
-          </Button>
+            </span>
+          </button>
 
-          <Button
-            variant={filter === 'ACTIVE' ? 'secondary' : 'ghost'}
-            size="sm"
+          <button
+            role="tab"
+            aria-selected={filter === 'ACTIVE'}
             onClick={() => setFilter('ACTIVE')}
-            className="text-xs h-8 px-3 font-medium gap-1.5 shrink-0"
+            className={cn(
+              "flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 cursor-pointer min-h-[34px]",
+              filter === 'ACTIVE'
+                ? "bg-card text-foreground shadow-xs border border-border/50 font-bold"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
+            )}
           >
-            <span>Active Kitchen</span>
-            <Badge variant="outline" className="text-[10px] h-4 px-1 leading-none font-mono">
+            <span className="hidden xs:inline">Active</span>
+            <span className="xs:hidden">Kitchen</span>
+            <span
+              className={cn(
+                "text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full",
+                filter === 'ACTIVE'
+                  ? "bg-amber-500/20 text-amber-700 dark:text-amber-400"
+                  : "bg-muted/60 text-muted-foreground"
+              )}
+            >
               {activeOrdersCount}
-            </Badge>
-          </Button>
+            </span>
+          </button>
 
-          <Button
-            variant={filter === 'READY' ? 'secondary' : 'ghost'}
-            size="sm"
+          <button
+            role="tab"
+            aria-selected={filter === 'READY'}
             onClick={() => setFilter('READY')}
-            className="text-xs h-8 px-3 font-medium gap-1.5 shrink-0"
+            className={cn(
+              "flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 cursor-pointer min-h-[34px]",
+              filter === 'READY'
+                ? "bg-card text-foreground shadow-xs border border-border/50 font-bold"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
+            )}
           >
-            <span>Ready for Rider</span>
-            <Badge variant="outline" className="text-[10px] h-4 px-1 leading-none font-mono">
+            <span>Ready</span>
+            <span
+              className={cn(
+                "text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full",
+                filter === 'READY'
+                  ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-400"
+                  : "bg-muted/60 text-muted-foreground"
+              )}
+            >
               {readyOrdersCount}
-            </Badge>
-          </Button>
+            </span>
+          </button>
         </div>
 
-        <div className="text-xs text-muted-foreground hidden sm:flex items-center gap-1.5 font-mono shrink-0 ml-4">
-          <Clock className="w-3.5 h-3.5" />
-          <span>Avg Cook: ~14m</span>
+        <div className="text-xs text-muted-foreground flex items-center gap-2 font-mono shrink-0 px-1">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="flex items-center gap-1">
+            <Clock className="w-3.5 h-3.5 text-muted-foreground/70" />
+            <span>Target Cook: ~14m</span>
+          </span>
         </div>
       </div>
 
@@ -200,24 +243,30 @@ export function OrdersQueueView({
               <Card 
                 key={order.id} 
                 className={cn(
-                  "overflow-hidden border-2 shadow-xs transition-colors flex flex-col justify-between",
+                  "overflow-hidden border rounded-2xl shadow-xs transition-all flex flex-col justify-between bg-card",
                   sla.state === 'RED'
-                    ? "border-red-500/80 bg-red-50/20 dark:bg-red-950/10"
+                    ? "border-red-500/70 ring-1 ring-red-500/20"
                     : sla.state === 'AMBER'
-                    ? "border-amber-500/80 bg-amber-50/20 dark:bg-amber-950/10"
-                    : "border-border"
+                    ? "border-amber-500/70 ring-1 ring-amber-500/20"
+                    : "border-border/80"
                 )}
               >
                 <div>
-                  {/* Card Header with Live SLA Timer */}
+                  {/* Apple HIG Card Header: Clean 2-column layout */}
                   <div className={cn(
-                    "p-3.5 pb-3 flex items-start justify-between gap-2 border-b-2",
-                    sla.state === 'RED' ? "bg-red-100/60 dark:bg-red-950/30 border-red-200" : sla.state === 'AMBER' ? "bg-amber-100/60 dark:bg-amber-950/30 border-amber-200" : "bg-muted/30 border-border/60"
+                    "p-3.5 pb-3 flex items-start justify-between gap-3 border-b transition-colors",
+                    sla.state === 'RED' 
+                      ? "bg-red-500/10 border-red-200 dark:border-red-900/50" 
+                      : sla.state === 'AMBER' 
+                      ? "bg-amber-500/10 border-amber-200 dark:border-amber-900/50" 
+                      : "bg-muted/30 border-border/60"
                   )}>
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 flex-wrap">
+                    {/* Left: Channel, Order Number & Customer */}
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        {/* Compact Channel Tag */}
                         <span className={cn(
-                          "text-[10px] uppercase font-black tracking-wider px-1.5 py-0.5 rounded text-white font-mono",
+                          "text-[9px] uppercase font-black tracking-wider px-1.5 py-0.5 rounded-md text-white font-mono shrink-0 shadow-2xs",
                           isSwiggy ? "bg-orange-600" : isZomato ? "bg-red-600" : "bg-neutral-800"
                         )}>
                           {order.channel}
@@ -225,144 +274,149 @@ export function OrdersQueueView({
                         <span className="font-extrabold text-foreground text-sm tracking-tight font-mono">
                           {order.orderNumber}
                         </span>
-                        {/* Live SLA Urgency Pill */}
-                        <span className={cn(
-                          "text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1 font-mono",
-                          sla.state === 'RED' ? "bg-red-600 text-white font-black animate-pulse" : sla.state === 'AMBER' ? "bg-amber-500 text-black font-extrabold" : "bg-muted text-foreground/80"
-                        )}>
-                          <Clock className="w-3 h-3" />
-                          <span>{sla.text}</span>
-                        </span>
                       </div>
-                      <div className="flex items-center gap-2 text-xs flex-wrap">
+
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground flex-wrap">
                         <span className="font-bold text-foreground">{order.brandName}</span>
-                        <span className="text-foreground/80 font-medium">• {order.customerName}</span>
-                        {order.customerPhone && (
-                          <span className="text-[10px] text-muted-foreground font-mono bg-muted/60 px-1.5 py-0.2 rounded border border-border/60">
-                            📞 {order.customerPhone}
-                          </span>
-                        )}
-                        {order.customerAddress && (
-                          <span className="text-[10px] text-muted-foreground truncate max-w-[200px]" title={order.customerAddress}>
-                            📍 {order.customerAddress}
-                          </span>
-                        )}
+                        <span>•</span>
+                        <span className="truncate max-w-[140px] font-medium">{order.customerName}</span>
                       </div>
                     </div>
 
-                    {/* Distinctive High-Contrast Status Badges */}
-                    <span
-                      className={cn(
-                        "text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-md shrink-0 border",
-                        order.status === 'READY'
-                          ? "bg-emerald-600 text-white border-emerald-700"
-                          : order.status === 'PREPARING'
-                          ? "bg-amber-500 text-black border-amber-600 font-black animate-pulse"
-                          : order.status === 'ACCEPTED'
-                          ? "bg-blue-600 text-white border-blue-700"
-                          : "bg-muted text-foreground border-border"
-                      )}
-                    >
-                      {order.status}
-                    </span>
+                    {/* Right: Status Pill & SLA Countdown */}
+                    <div className="flex flex-col items-end gap-1.5 shrink-0">
+                      {/* Apple HIG Tinted Status Pill */}
+                      <span
+                        className={cn(
+                          "text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border shadow-2xs",
+                          order.status === 'READY'
+                            ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30"
+                            : order.status === 'PREPARING'
+                            ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30 font-extrabold"
+                            : order.status === 'ACCEPTED'
+                            ? "bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/30"
+                            : "bg-muted text-foreground/80 border-border"
+                        )}
+                      >
+                        {order.status}
+                      </span>
+
+                      {/* Live SLA Countdown Pill */}
+                      <span className={cn(
+                        "text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex items-center gap-1 font-mono",
+                        sla.state === 'RED' 
+                          ? "bg-red-600 text-white font-bold animate-pulse" 
+                          : sla.state === 'AMBER' 
+                          ? "bg-amber-500/20 text-amber-800 dark:text-amber-300 font-bold" 
+                          : "text-muted-foreground bg-muted/60"
+                      )}>
+                        <Clock className="w-2.5 h-2.5" />
+                        <span>{sla.text}</span>
+                      </span>
+                    </div>
                   </div>
 
-                  {/* Order Items */}
-                  <div className="p-4 space-y-2">
-                    <div className="space-y-1.5">
-                      {order.items.map((it) => (
-                        <div
-                          key={it.id}
-                          className="flex items-start justify-between text-xs py-1.5 px-2 rounded-md bg-muted/40 border border-border/40 gap-2"
-                        >
-                          <div className="flex items-start space-x-2 min-w-0 flex-1">
-                            <span className="font-bold text-foreground font-mono text-xs shrink-0 mt-0.5">
-                              {it.quantity}x
-                            </span>
-                            <span className="text-foreground/90 font-medium leading-snug break-words">
-                              {it.name}
-                            </span>
-                          </div>
-                          <Badge
-                            variant="outline"
-                            className="text-[9px] font-semibold font-sans px-1.5 py-0 h-4 shrink-0 mt-0.5"
-                          >
-                            {formatStationName(it.station)}
-                          </Badge>
+                  {/* Order Items: Clean borderless list rows */}
+                  <div className="p-3.5 py-2.5 divide-y divide-border/40">
+                    {order.items.map((it) => (
+                      <div
+                        key={it.id}
+                        className="flex items-center justify-between text-xs py-2 gap-2"
+                      >
+                        <div className="flex items-center space-x-2.5 min-w-0 flex-1">
+                          <span className="font-bold text-foreground font-mono text-xs shrink-0 w-6 text-center py-0.5 rounded-md bg-muted/60">
+                            {it.quantity}x
+                          </span>
+                          <span className="text-foreground/90 font-medium leading-snug break-words">
+                            {it.name}
+                          </span>
                         </div>
-                      ))}
-                    </div>
+                        <Badge
+                          variant="outline"
+                          className="text-[9px] font-medium px-2 py-0.5 h-5 shrink-0 bg-muted/30 border-border/70 text-muted-foreground"
+                        >
+                          {formatStationName(it.station)}
+                        </Badge>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
                 {/* Footer Controls & Financials */}
-                <div className="p-4 pt-3 border-t border-border/60 bg-muted/10 flex items-center justify-between gap-2">
+                <div className="p-3 border-t border-border/60 bg-muted/15 flex items-center justify-between gap-2">
                   <button
                     type="button"
                     onClick={() => onInspectFinancials(order)}
-                    className="flex items-center space-x-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer text-left"
+                    className="flex items-center space-x-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer text-left py-1 px-1.5 rounded-lg hover:bg-muted/50 -ml-1"
+                    title="Click to inspect unit economics, taxes, and aggregator commissions"
                   >
                     <Info className="w-3.5 h-3.5 text-muted-foreground/70" />
-                    <span className="font-mono text-foreground font-semibold">
+                    <span className="font-mono text-foreground font-bold">
                       {formatCurrency(order.financials.netMargin)}
                     </span>
-                    <span className="text-[10px] text-muted-foreground">
+                    <span className="text-[10px] text-muted-foreground font-medium">
                       ({order.financials.netMarginPercentage}%)
                     </span>
                   </button>
 
-                  <div className="flex items-center space-x-1.5 shrink-0">
+                  <div className="flex items-center space-x-2 shrink-0">
                     {/* Bill Receipt & WhatsApp Share Button */}
-                    <Button
-                      size="sm"
-                      variant="ghost"
+                    <button
+                      type="button"
                       onClick={() => setBillingReceiptOrder(order)}
-                      className="text-xs h-8 px-2 text-muted-foreground hover:text-foreground cursor-pointer gap-1"
+                      className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-border/80 bg-background hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer shadow-2xs"
                       title="View Tax Invoice & Send on WhatsApp"
+                      aria-label="View Tax Invoice"
                     >
                       <Printer className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">Bill</span>
-                    </Button>
+                    </button>
 
                     {order.status === 'RECEIVED' && (
                       <Button
                         size="sm"
                         onClick={() => onUpdateStatus(order.id, 'ACCEPTED')}
-                        className="text-xs h-8 px-3"
+                        className="text-xs h-8 px-3.5 font-bold shadow-xs bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer rounded-lg"
                       >
                         Accept
                       </Button>
                     )}
+
                     {order.status === 'ACCEPTED' && (
                       <Button
                         size="sm"
-                        variant="secondary"
                         onClick={() => onUpdateStatus(order.id, 'PREPARING')}
-                        className="text-xs h-8 px-3"
+                        className="text-xs h-8 px-3.5 font-bold shadow-xs bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer rounded-lg"
                       >
                         Start Cook
                       </Button>
                     )}
+
                     {order.status === 'PREPARING' && (() => {
                       const allStationDone = order.items.every((it) => it.stationDone)
-                      return (
+                      return allStationDone ? (
                         <Button
                           size="sm"
-                          disabled={!allStationDone}
                           onClick={() => onUpdateStatus(order.id, 'READY')}
-                          className="text-xs h-8 px-3"
-                          title={!allStationDone ? "Cooking in progress on KDS stations. Check off all items on KDS before marking ready." : "Mark order ready for dispatch"}
+                          className="text-xs h-8 px-3.5 font-bold shadow-xs bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer rounded-lg"
                         >
-                          {allStationDone ? 'Mark Ready' : 'Cooking on KDS'}
+                          Mark Ready
                         </Button>
+                      ) : (
+                        <div 
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/25 text-amber-700 dark:text-amber-400 text-xs font-semibold shadow-2xs"
+                          title="Cooking in progress on station KDS displays"
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                          <span>Cooking on KDS</span>
+                        </div>
                       )
                     })()}
+
                     {order.status === 'READY' && (
                       <Button
                         size="sm"
-                        variant="outline"
                         onClick={() => onUpdateStatus(order.id, 'DISPATCHED')}
-                        className="text-xs h-8 px-3"
+                        className="text-xs h-8 px-3.5 font-bold shadow-xs bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer rounded-lg"
                       >
                         Hand to Rider
                       </Button>
