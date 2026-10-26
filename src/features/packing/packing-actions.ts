@@ -418,7 +418,7 @@ export async function resetDispatchRulesAction(kitchenId?: string): Promise<Acti
 
     return {
       ok: true,
-      data: resetRules.map((s) => ({
+      data: resetRules.map((s: any) => ({
         id: s.id,
         label: s.label,
         category: s.category,

@@ -61,7 +61,7 @@ export async function getCurrentKitchenContext(explicitKitchenId?: string): Prom
   }
 
   const userKitchen = explicitKitchenId
-    ? membership.organization.kitchens.find((k) => k.id === explicitKitchenId)
+    ? membership.organization.kitchens.find((k: { id: string }) => k.id === explicitKitchenId)
     : membership.organization.kitchens[0];
 
   if (!userKitchen) {
