@@ -183,10 +183,12 @@ All refactored domains and database schemas have been verified through automated
      - **Live Auto-86 Trigger**: Depleting stock below recipe required portion or safety threshold (`minThreshold`) automatically takes connected dishes offline (`isAvailable: false, swiggyOnline: false, zomatoOnline: false`), revalidating `inventoryTags.menuItems`.
      - **Auto-86 Recovery / Re-activation**: Restocking through physical audits or Purchase Order reception verifies all recipe ingredients before restoring dishes online (`isAvailable: true, swiggyOnline: true, zomatoOnline: true`).
      - **Immutable Stock Ledger**: Every adjustment, PO intake (`PURCHASE_INFLOW`), and wastage event writes an immutable entry into `StockLedgerEntry`, hydrated into global `KitchenContext`.
-4. **Next.js Production Build with Turbopack**:
-   - Command: `next build`
-   - Exit code: `0`
-   - Results: All 14 application routes compiled and prerendered cleanly.
+5. **Cryptographic Multi-Tenant Isolation & Zero-Bleed Session Context**:
+   - Implemented `getCurrentKitchenContext()` in `src/lib/session.ts` strictly tied to Supabase Auth (`auth.users`) and verified `organization_members` memberships.
+   - **Zero-Bleed Perimeter**: Removed all global fallback queries (`findFirst({ where: { isActive: true } })`). If session validation or tenant ownership fails, typed domain exceptions (`AuthenticationRequiredError`, `KitchenNotFoundError`) are thrown.
+   - **Next.js 16 PPR Compatibility**: Integrated `await connection()` from `next/server` at the beginning of the context resolver so Next.js Partial Prerendering streams dynamic request-time tenant data inside `<Suspense>` boundaries without failing prerender builds.
+   - **Root Error Boundary**: Implemented `src/app/error.tsx` catching auth exceptions with seamless client-side redirects to `/login?redirectTo=...`, rendering Apple HIG store setup states for unconfigured facilities, and providing native `reset()` reconnection triggers without leaking internal URLs.
+   - **Production Build Status**: Verified with `pnpm exec tsc --noEmit` and `pnpm run build` (all 14 routes compiled with exit code 0).
 
 ---
 
@@ -208,12 +210,16 @@ gantt
     Global 4-Axis Nav Reconnection Hook         :done,    des11, 2026-10-25, 1d
     Greasy Finger Debounce & Ordering Concurrency:done,   des8, 2026-10-25, 1d
     Inventory & PO Transactional Restock Engine :done,    des9, 2026-10-25, 1d
-    section Phase 6 (Next Up)
-    Supabase @supabase/ssr Cookie Auth          :active,  des5, 2026-10-26, 2d
-    Stripe Billing & Tier Entitlements          :         des7, after des5, 3d
+    section Phase 6 (Completed)
+    Supabase @supabase/ssr Cookie Auth & RLS    :done,    des5, 2026-10-26, 1d
+    Multi-Tenant Session & Error Boundary Hardening:done, des12, 2026-10-26, 1d
+    section Phase 7 (Next Up)
+    Realtime Pub/Sub on Live Orders Queue       :active,  des13, 2026-10-26, 1d
+    Kitchen Switcher & Multi-Outlet Selector    :         des14, after des13, 1d
+    Stripe Billing & Tier Entitlements          :         des7, after des14, 2d
 ```
 
 ### Next Immediate Action:
-- Implement `@supabase/ssr` cookie-based session verification and middleware route protection for multi-tenant organizations.
+- Implement Supabase Realtime broadcast listener on Live Orders Queue (`/orders`) for zero-refresh card insertion.
 
 

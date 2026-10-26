@@ -786,6 +786,232 @@ To prevent silent desynchronization without hammering the PostgreSQL database, K
 4. **Lightweight 30s Heartbeat Fallback**:
    A passive interval checks for dropped packets during busy rushes only when the device is actively online and visible.
 
+---
 
+## 6. Multi-Tenant Authorization, Session Context & Next.js 16 PPR Security Architecture
 
+### 6.1 Cryptographic Tenant Perimeter (`session.ts`)
+
+In high-concurrency cloud kitchen clusters, falling back to loose database queries (such as `findFirst({ where: { isActive: true } })`) causes severe cross-tenant data leaks (e.g. newly onboarded tenants seeing another facility's live orders, margins, or raw materials).
+
+KitchenOS enforces an airtight cryptographic boundary via a centralized session context resolver (`src/lib/session.ts`):
+
+```
+┌────────────────────────────────────────────────────────┐
+│             Client Request with Auth Cookie            │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│               await connection() (Next.js 16)          │
+│   (Signals Partial Prerender to pause static shell     │
+│       and stream dynamic tenant data at request time)  │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│              Supabase Auth getUser()                   │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+             ┌─────────────┴─────────────┐
+             ▼                           ▼
+      [Token Invalid]             [Valid User UUID]
+             │                           │
+             ▼                           ▼
+ ┌───────────────────────┐  ┌─────────────────────────────┐
+ │ AuthenticationRequired│  │ Query OrganizationMember    │
+ │ Error Thrown          │  │ (Verifies Tenant Ownership) │
+ └───────────────────────┘  └────────────┬────────────────┘
+                                         │
+                           ┌─────────────┴─────────────┐
+                           ▼                           ▼
+                   [Kitchen Found]             [No Kitchen Linked]
+                           │                           │
+                           ▼                           ▼
+                ┌─────────────────────┐     ┌─────────────────────┐
+                │ Returns Validated   │     │ KitchenNotFoundError│
+                │ UserSessionContext  │     │ Thrown              │
+                │ (Scoped kitchenId)  │     └─────────────────────┘
+                └─────────────────────┘
+```
+
+### 6.2 Typed Exceptions & Root Error Boundary (`error.tsx`)
+
+By translating authorization and facility anomalies into domain-specific exceptions, `src/app/error.tsx` provides high-fidelity recovery without crashing the dashboard shell:
+
+1. **`AuthenticationRequiredError`**:
+   - Intercepts missing or expired tokens.
+   - Automatically executes `router.replace('/login?redirectTo=...')` preserving user intent.
+   - Renders a branded loading splash during the transition.
+2. **`KitchenNotFoundError`**:
+   - Intercepts accounts without an active kitchen facility.
+   - Renders an Apple HIG empty state guiding the user to contact their organization administrator.
+   - Protects internal administrative deployment URLs (`/admin/onboard`) from public leakage.
+3. **Transient Network Recovery**:
+   - Invokes React's `reset()` callback to allow cooks and operators to re-attempt database connection if a momentary pooler connection times out.
+
+---
+
+## 7. Edge Routing & Authentication Perimeter (`middleware.ts`)
+
+KitchenOS operates a two-layer security model: **Edge Middleware Layer** for low-latency session token validation and route guarding, paired with the **Server Component Session Context** (`session.ts`) for cryptographic tenant isolation.
+
+### 7.1 Architecture Flow
+
+```
+┌────────────────────────────────────────────────────────┐
+│                   Inbound HTTP Request                 │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│               Edge Middleware (middleware.ts)          │
+│       • Refreshes expired Supabase session cookies     │
+│       • Calls supabase.auth.getUser()                  │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+             ┌─────────────┴─────────────┐
+             ▼                           ▼
+      [Unauthenticated]           [Authenticated]
+             │                           │
+    ┌────────┴────────┐         ┌────────┴────────┐
+    ▼                 ▼         ▼                 ▼
+[Public Route] [Protected]  [Visiting /login] [Kitchen Route]
+    │                 │         │                 │
+    ▼                 ▼         ▼                 ▼
+ Allow Request   Redirect to  Redirect to     Forward Request
+                 /login with  /orders         to Server RSC
+                 redirectTo                   (session.ts)
+```
+
+### 7.2 Route Classification
+- **Public Routes**: `/login`, `/`, `/invoice/*`, `/admin/*`, `/manifest.json`, `/favicon.ico`.
+- **Protected Kitchen Routes**: `/orders`, `/kds`, `/inventory`, `/margins`, `/packing`, `/pos`, `/delivery`.
+- **Redirect Semantics**:
+  - Unauthenticated access to protected routes redirects to `/login?redirectTo=<originalPath>`.
+  - Authenticated visits to `/login` automatically redirect to `/orders`.
+  - Static asset exemptions: `_next/static`, `_next/image`, and media assets bypass auth evaluation completely to maximize CDN edge caching.
+
+---
+
+## 8. Automated Recipe BOM Deduction & Auto-86 Stock Ledger Engine
+
+KitchenOS connects live kitchen order fulfillment with automated inventory depletion and real-time menu availability gating (86ing).
+
+### 8.1 Recipe Bill of Materials (BOM) & Inventory Depletion Flow
+
+```
+┌────────────────────────────────────────────────────────┐
+│                 Order Placed / Ingested                │
+│                 (POS / Aggregator Webhook)             │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│             Prisma $transaction Isolation              │
+│  1. Ingest Order & Order Items with station assignments│
+│  2. Query Recipe BOM (recipe_ingredients) for dishes   │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│         Atomic Stock Balance Ledger Update             │
+│  • previousStock = currentStock                        │
+│  • delta = -(recipeQuantity * orderQuantity)           │
+│  • balanceAfter = max(0, previousStock + delta)        │
+│  • Log immutable StockLedgerEntry:                     │
+│    reason = 'ORDER_CONSUMPTION'                        │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│            Auto-86 Inventory Threshold Evaluation       │
+│  • Is newStock <= 0 OR newStock < minThreshold?       │
+└──────────────────────────┬─────────────────────────────┘
+             ┌─────────────┴─────────────┐
+             ▼                           ▼
+        [Depleted]                  [Sufficient]
+             │                           │
+             ▼                           ▼
+┌─────────────────────────┐    ┌─────────────────────────┐
+│ Automatically 86 Dish:  │    │ Dish Remains Online     │
+│ • isAvailable = false   │    └─────────────────────────┘
+│ • swiggyOnline = false  │
+│ • zomatoOnline = false  │
+│ • Emit stock alert      │
+└─────────────────────────┘
+```
+
+### 8.2 Inventory Recovery & Menu Restoration
+When stock is replenished via `adjustStockAction` (e.g. `PURCHASE_RESTOCK` or `PHYSICAL_AUDIT_CORRECTION`):
+1. The engine checks if the restocked ingredient is used in any 86ed dishes.
+2. It performs a **multi-ingredient dependency check**: Verifies that *all other* ingredients in the recipe BOM are also above their required threshold.
+3. If all dependencies are satisfied, the dish is automatically restored: `isAvailable = true`, `swiggyOnline = true`, `zomatoOnline = true`.
+
+---
+
+## 9. Unit Economics & Indian Cloud Kitchen Finance Engine (`finance.ts`)
+
+Cloud kitchens operate on slim margins governed by multi-tier aggregator commissions, packaging material costs, and complex tax regulations.
+
+### 9.1 Zero Floating-Point Drift: Integer Paise Precision
+All currency arithmetic is executed internally in **integer paise** (`Math.round(rupees * 100)`), completely eliminating floating-point rounding errors across high-volume transaction feeds.
+
+### 9.2 Statutory Compliance: Section 9(5) CGST Act & Commission GST
+- **Section 9(5) CGST Act**: E-commerce food aggregators (Swiggy/Zomato) are statutory collectors who collect and remit the 5% restaurant GST directly to the government. KitchenOS cleanly isolates restaurant GST from kitchen payout deductions.
+- **Aggregator Commission GST**: Aggregators charge an additional 18% GST on their commission invoice. KitchenOS computes the base commission and the 18% GST surcharge separately for true reconciliation.
+
+### 9.3 Unit Economics Computation Formula
+$$\text{Gross Inflow} = \text{Item Subtotal} + \text{Packaging Fee Collected}$$
+$$\text{Commission Base} = \begin{cases} \text{Gross}, & \text{if GROSS setting} \\ \max(0, \text{Gross} - \text{Discount}), & \text{if NET\_AFTER\_DISCOUNT} \end{cases}$$
+$$\text{Aggregator Commission} = \text{Commission Base} \times \text{Commission Rate} \times 1.18 \quad (\text{includes 18\% GST})$$
+$$\text{Total Deductions} = \text{Discount} + \text{Commission} + \text{Ingredient BOM Cost} + \text{Packaging Cost} + \text{Tax Deduction}$$
+$$\text{Net Contribution Margin} = \text{Gross Inflow} - \text{Total Deductions}$$
+$$\text{Net Margin \%} = \frac{\text{Net Contribution Margin}}{\text{Gross Inflow}} \times 100$$
+
+---
+
+## 10. Intelligent Dispatch QA & Dynamic Packaging Rules (`packing-actions.ts`)
+
+To eliminate wrong-order dispatches and spilled gravies in multi-brand operations, the packing station enforces a dynamic quality assurance pipeline.
+
+### 10.1 Dynamic Packaging Rules Hierarchy
+1. **Universal Defaults**:
+   - `rule-cutlery`: Eco-friendly spoons, wooden forks, tissues.
+   - `rule-sauces`: Condiments, extra dips, raita cups, mint chutney.
+   - `rule-napkins`: Branded napkins & sanitizing wet wipes.
+   - `rule-tamper`: Tamper-evident bag seal & barcode receipt sticker.
+2. **Category-Specific Dynamic QA Rules**:
+   - `rule-beverage`: Thermal pouch isolation to keep chilled shakes/colas separated from steaming dum biryani boxes.
+   - `rule-icecream`: Dry-ice pack attachment.
+   - `rule-fragile`: Spill-proof container upright verification.
+3. **Optimistic Locking at Packing**:
+   Packing checklists utilize the same integer `version` sequence matching as the KDS line, preventing dual dispatchers from packing or marking an order dispatched simultaneously.
+
+---
+
+## 11. Multi-Level Next.js Cache Tag Topology (`*-cache.ts`)
+
+KitchenOS leverages Next.js fine-grained tag-based revalidation (`revalidateTag`) to keep static page shells responsive while invalidating only affected tenant data.
+
+```
+┌────────────────────────────────────────────────────────┐
+│                 Mutation Event Executed                │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+             ┌─────────────┼─────────────┐
+             ▼             ▼             ▼
+       [Order Placed] [KDS Toggle] [Stock Adjust]
+             │             │             │
+             ▼             ▼             ▼
+┌──────────────────────────┬─────────────────────────────┐
+│              Targeted Cache Invalidation               │
+│                                                        │
+│  • orders:${kitchenId}       • kds:${kitchenId}:orders │
+│  • orders:${kitchenId}:feed  • packing:${kitchenId}    │
+│  • inventory:${kitchenId}    • inventory:${kitchenId}:bom│
+└────────────────────────────────────────────────────────┘
+```
+
+This ensures zero cross-tenant cache pollution, fast page renders, and instant synchronization when state changes occur on any station tablet.
 
