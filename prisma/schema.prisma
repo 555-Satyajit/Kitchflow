@@ -1,138 +1,410 @@
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 generator client {
   provider = "prisma-client-js"
 }
 
-// 1. Kitchens (Multi-tenant root)
+// ==============================================================================
+// ENUMS (100% Synced with src/types/index.ts)
+// ==============================================================================
+
+enum MemberRole {
+  owner
+  admin
+  manager
+  kitchen_staff
+}
+
+enum Channel {
+  SWIGGY
+  ZOMATO
+  DIRECT
+  WALK_IN
+}
+
+enum OrderStatus {
+  RECEIVED
+  ACCEPTED
+  PREPARING
+  READY
+  DISPATCHED
+  CANCELLED
+}
+
+enum Station {
+  GRILL
+  FRY
+  TANDOOR
+  DUM_BIRYANI
+  WOK
+  PIZZA
+  BEVERAGE
+  DESSERT
+  ASSEMBLY
+  PACKING
+}
+
+enum IngredientUnit {
+  g
+  ml
+  pc
+  kg
+  l
+}
+
+enum InventoryCategory {
+  PACKAGING
+  MEAT_POULTRY
+  PRODUCE_DAIRY
+  DRY_STAPLES
+  BEVERAGES_RETAIL
+  CENTRAL_PREP
+}
+
+enum StorageZone {
+  DRY_STORE
+  CHILLER
+  FREEZER
+  PACKAGING_BAY
+  STATION_LINE
+}
+
+enum StockReasonCode {
+  WASTAGE_SPOILAGE
+  AUDIT_CORRECTION
+  PURCHASE_INFLOW
+  RECIPE_AUTO_CONSUMPTION
+}
+
+enum PurchaseOrderStatus {
+  PENDING_DELIVERY
+  RECEIVED
+  PARTIALLY_RECEIVED
+  CANCELLED
+}
+
+enum PurchaseOrderHorizon {
+  MANUAL
+  LOW_STOCK
+  WEEKLY
+  MONTHLY
+}
+
+enum PaymentMethod {
+  CASH
+  UPI
+  CARD
+  COD
+  DUE
+}
+
+enum PaymentStatus {
+  PAID
+  PENDING
+}
+
+// ==============================================================================
+// MODELS
+// ==============================================================================
+
+// 1. Organization (SaaS Multi-tenant Root)
+model Organization {
+  id                 String               @id @default(uuid())
+  name               String
+  slug               String               @unique
+  logoUrl            String?              @map("logo_url")
+  subscriptionTier   String               @default("starter") @map("subscription_tier")
+  subscriptionStatus String               @default("active") @map("subscription_status")
+  stripeCustomerId   String?              @unique @map("stripe_customer_id")
+  stripeSubscriptionId String?            @unique @map("stripe_subscription_id")
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @updatedAt @map("updated_at")
+
+  members            OrganizationMember[]
+  kitchens           Kitchen[]
+
+  @@map("organizations")
+}
+
+// 2. Organization Members (RBAC)
+model OrganizationMember {
+  id             String       @id @default(uuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String       @map("user_id")
+  role           MemberRole   @default(kitchen_staff)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  @@unique([organizationId, userId])
+  @@index([userId], map: "idx_org_members_user_id")
+  @@index([organizationId], map: "idx_org_members_org_id")
+  @@map("organization_members")
+}
+
+// 3. Kitchens (Physical Facilities)
 model Kitchen {
-  id          String       @id @default(uuid())
-  name        String
-  address     String?
-  isActive    Boolean      @default(true)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id             String          @id @default(uuid())
+  organizationId String?         @map("organization_id")
+  organization   Organization?   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  address        String?
+  timezone       String          @default("UTC")
+  currency       String          @default("USD")
+  isActive       Boolean         @default(true) @map("is_active")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
 
-  brands      Brand[]
-  ingredients Ingredient[]
-  orders      Order[]
+  brands             Brand[]
+  ingredients        Ingredient[]
+  orders             Order[]
+  purchaseOrders     PurchaseOrder[]
+  dispatchCheckRules DispatchCheckRule[]
+
+  @@index([organizationId], map: "idx_kitchens_org_id")
+  @@map("kitchens")
 }
 
-// 2. Virtual Brands (Multiple virtual brands sharing one kitchen)
+// 4. Virtual Brands
 model Brand {
-  id          String     @id @default(uuid())
-  kitchenId   String
-  kitchen     Kitchen    @relation(fields: [kitchenId], references: [id], onDelete: Cascade)
-  name        String
-  tagline     String?
-  color       String     @default("#f97316")
-  isActive    Boolean    @default(true)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  id        String     @id @default(uuid())
+  kitchenId String     @map("kitchen_id")
+  kitchen   Kitchen    @relation(fields: [kitchenId], references: [id], onDelete: Cascade)
+  name      String
+  tagline   String?
+  color     String     @default("#f97316")
+  logoUrl   String?    @map("logo_url")
+  active    Boolean    @default(true)
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
 
-  menuItems   MenuItem[]
-  orders      Order[]
+  menuItems MenuItem[]
+  orders    Order[]
+
+  @@index([kitchenId], map: "idx_brands_kitchen_id")
+  @@map("brands")
 }
 
-// 3. Raw Ingredient Master
+// 5. Raw Ingredient Master
 model Ingredient {
-  id           String             @id @default(uuid())
-  kitchenId    String
-  kitchen      Kitchen            @relation(fields: [kitchenId], references: [id], onDelete: Cascade)
+  id           String              @id @default(uuid())
+  kitchenId    String              @map("kitchen_id")
+  kitchen      Kitchen             @relation(fields: [kitchenId], references: [id], onDelete: Cascade)
+  brandId      String?             @map("brand_id")
   name         String
-  unit         String             // g, ml, pc, kg, l
-  currentStock Float              @default(0)
-  minThreshold Float              @default(0)
-  costPerUnit  Float              @default(0)
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
+  category     InventoryCategory?  @default(DRY_STAPLES)
+  supplierName String?             @map("supplier_name")
+  storageZone  StorageZone?        @default(DRY_STORE) @map("storage_zone")
+  unit         IngredientUnit
+  currentStock Float               @default(0) @map("current_stock")
+  minThreshold Float               @default(0) @map("min_threshold")
+  costPerUnit  Float               @default(0) @map("cost_per_unit")
+  createdAt    DateTime            @default(now()) @map("created_at")
+  updatedAt    DateTime            @updatedAt @map("updated_at")
 
   recipes      RecipeIngredient[]
   ledger       StockLedgerEntry[]
+  poItems      PurchaseOrderItem[]
+
+  @@index([kitchenId], map: "idx_ingredients_kitchen_id")
+  @@index([kitchenId, currentStock], map: "idx_ingredients_low_stock")
+  @@map("ingredients")
 }
 
-// 4. Menu Items
+// 6. Menu Items
 model MenuItem {
-  id            String             @id @default(uuid())
-  brandId       String
-  brand         Brand              @relation(fields: [brandId], references: [id], onDelete: Cascade)
-  name          String
-  station       String             // GRILL, FRY, ASSEMBLY, PACKING
-  sellingPrice  Float
-  packagingCost Float              @default(15.0)
-  isAvailable   Boolean            @default(true)
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
+  id                String             @id @default(uuid())
+  brandId           String             @map("brand_id")
+  brand             Brand              @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  name              String
+  description       String             @default("")
+  station           Station
+  secondaryStations Station[]          @default([]) @map("secondary_stations")
+  sellingPrice      Float              @map("selling_price")
+  packagingCost     Float              @default(15.0) @map("packaging_cost")
+  isAvailable       Boolean            @default(true) @map("is_available")
+  swiggyOnline      Boolean            @default(true) @map("swiggy_online")
+  zomatoOnline      Boolean            @default(true) @map("zomato_online")
+  lastSyncedAt      DateTime?          @map("last_synced_at")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
 
-  recipe        RecipeIngredient[]
-  orderItems    OrderItem[]
+  recipe            RecipeIngredient[]
+  orderItems        OrderItem[]
+
+  @@index([brandId], map: "idx_menu_items_brand_id")
+  @@index([brandId, station], map: "idx_menu_items_station")
+  @@map("menu_items")
 }
 
-// 5. Bill of Materials (BOM) linking MenuItem to Ingredients
+// 7. Bill of Materials (BOM)
 model RecipeIngredient {
   id           String     @id @default(uuid())
-  menuItemId   String
+  menuItemId   String     @map("menu_item_id")
   menuItem     MenuItem   @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
-  ingredientId String
+  ingredientId String     @map("ingredient_id")
   ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
   quantity     Float
 
   @@unique([menuItemId, ingredientId])
+  @@index([menuItemId], map: "idx_recipes_menu_item_id")
+  @@index([ingredientId], map: "idx_recipes_ingredient_id")
+  @@map("recipes")
 }
 
-// 6. Orders
+// 8. Orders
 model Order {
-  id                 String      @id @default(uuid())
-  kitchenId          String
-  kitchen            Kitchen     @relation(fields: [kitchenId], references: [id])
-  brandId            String
-  brand              Brand       @relation(fields: [brandId], references: [id])
-  channel            String      // SWIGGY, ZOMATO, DIRECT, WALK_IN
-  orderNumber        String
-  customerName       String?
-  status             String      @default("RECEIVED") // RECEIVED, ACCEPTED, PREPARING, READY, DISPATCHED, CANCELLED
-  targetPrepMinutes  Int         @default(15)
-  grossAmount        Float
-  discount           Float       @default(0)
-  commissionRate     Float       @default(0.22)
-  commissionAmount   Float       @default(0)
-  ingredientCost     Float       @default(0)
-  packagingCost      Float       @default(0)
-  netMargin          Float       @default(0)
-  createdAt          DateTime    @default(now())
-  readyAt            DateTime?
+  id                    String            @id @default(uuid())
+  kitchenId             String            @map("kitchen_id")
+  kitchen               Kitchen           @relation(fields: [kitchenId], references: [id])
+  brandId               String            @map("brand_id")
+  brand                 Brand             @relation(fields: [brandId], references: [id])
+  channel               Channel
+  orderNumber           String            @map("order_number")
+  customerName          String            @map("customer_name")
+  customerPhone         String?           @map("customer_phone")
+  customerAddress       String?           @map("customer_address")
+  status                OrderStatus       @default(RECEIVED)
+  paymentMethod         PaymentMethod?    @default(COD) @map("payment_method")
+  paymentStatus         PaymentStatus?    @default(PENDING) @map("payment_status")
+  targetPrepMinutes     Int               @default(15) @map("target_prep_minutes")
+  
+  // Financial Snapshot
+  grossAmount           Float             @default(0) @map("gross_amount")
+  discount              Float             @default(0)
+  commissionRate        Float             @default(0.22) @map("commission_rate")
+  commissionAmount      Float             @default(0) @map("commission_amount")
+  taxes                 Float             @default(0)
+  packagingFeeCollected Float             @default(0) @map("packaging_fee_collected")
+  ingredientCost        Float             @default(0) @map("ingredient_cost")
+  packagingCost         Float             @default(0) @map("packaging_cost")
+  netMargin             Float             @default(0) @map("net_margin")
+  netMarginPercentage   Float             @default(0) @map("net_margin_percentage")
 
-  items              OrderItem[]
-  ledgerEntries      StockLedgerEntry[]
+  // Packing QA Checklist
+  checklist             Json?             // e.g. { cutlery, saucesDips, napkins, tamperSeal, beverageSeparated }
+  dynamicChecklist      Json?             @map("dynamic_checklist")
+
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @default(now()) @updatedAt @map("updated_at")
+  version               Int               @default(0)
+  acknowledgedAt        DateTime?         @map("acknowledged_at")
+  readyAt               DateTime?         @map("ready_at")
+
+  items                 OrderItem[]
+  ledgerEntries         StockLedgerEntry[]
+
+  @@index([kitchenId], map: "idx_orders_kitchen_id")
+  @@index([brandId], map: "idx_orders_brand_id")
+  @@index([kitchenId, status], map: "idx_orders_status")
+  @@index([kitchenId, createdAt(sort: Desc)], map: "idx_orders_created_at")
+  @@index([customerPhone], map: "idx_orders_customer_phone")
+  @@index([customerName], map: "idx_orders_customer_name")
+  @@map("orders")
 }
 
-// 7. Order Items
+// 9. Order Items
 model OrderItem {
-  id           String    @id @default(uuid())
-  orderId      String
-  order        Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  menuItemId   String?
-  menuItem     MenuItem? @relation(fields: [menuItemId], references: [id], onDelete: SetNull)
-  name         String
-  station      String
-  quantity     Int       @default(1)
-  price        Float
-  isStationDone Boolean  @default(false)
+  id                String    @id @default(uuid())
+  orderId           String    @map("order_id")
+  order             Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId        String?   @map("menu_item_id")
+  menuItem          MenuItem? @relation(fields: [menuItemId], references: [id], onDelete: SetNull)
+  name              String
+  station           Station
+  secondaryStations Station[] @default([]) @map("secondary_stations")
+  quantity          Int       @default(1)
+  price             Float
+  stationDone       Boolean   @default(false) @map("station_done")
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at")
+  version           Int       @default(0)
+
+  @@index([orderId], map: "idx_order_items_order_id")
+  @@index([menuItemId], map: "idx_order_items_menu_item_id")
+  @@map("order_items")
 }
 
-// 8. Immutable Stock Ledger (Audit Trail)
+// 10. Immutable Stock Ledger (Audit Trail)
 model StockLedgerEntry {
-  id           String      @id @default(uuid())
-  ingredientId String
-  ingredient   Ingredient  @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
-  orderId      String?
-  order        Order?      @relation(fields: [orderId], references: [id], onDelete: SetNull)
-  delta        Float       // Negative for consumption, positive for restock
-  balanceAfter Float
-  reason       String      // ORDER_CONSUMPTION, PURCHASE_RESTOCK, WASTAGE_SPOILAGE, PHYSICAL_AUDIT_CORRECTION
-  notes        String?
-  createdAt    DateTime    @default(now())
+  id            String          @id @default(uuid())
+  ingredientId  String          @map("ingredient_id")
+  ingredient    Ingredient      @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+  orderId       String?         @map("order_id")
+  order         Order?          @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  previousStock Float           @default(0) @map("previous_stock")
+  delta         Float           // Negative for consumption, positive for restock
+  balanceAfter  Float           @map("balance_after")
+  unit          IngredientUnit  @default(g)
+  reason        StockReasonCode
+  notes         String?
+  createdAt     DateTime        @default(now()) @map("created_at")
+
+  @@index([ingredientId], map: "idx_stock_ledger_ingredient_id")
+  @@index([orderId], map: "idx_stock_ledger_order_id")
+  @@index([ingredientId, createdAt(sort: Desc)], map: "idx_stock_ledger_created_at")
+  @@map("stock_ledger")
+}
+
+// 11. Purchase Orders
+model PurchaseOrder {
+  id                 String                @id @default(uuid())
+  kitchenId          String                @map("kitchen_id")
+  kitchen            Kitchen               @relation(fields: [kitchenId], references: [id], onDelete: Cascade)
+  poNumber           String                @map("po_number")
+  supplierName       String                @map("supplier_name")
+  category           InventoryCategory?    @default(DRY_STAPLES)
+  horizon            PurchaseOrderHorizon  @default(MANUAL)
+  status             PurchaseOrderStatus   @default(PENDING_DELIVERY)
+  totalEstimatedCost Float                 @default(0) @map("total_estimated_cost")
+  actualCost         Float?                @map("actual_cost")
+  note               String?
+  discrepancyNote    String?               @map("discrepancy_note")
+  createdAt          DateTime              @default(now()) @map("created_at")
+  receivedAt         DateTime?             @map("received_at")
+  updatedAt          DateTime              @updatedAt @map("updated_at")
+
+  items              PurchaseOrderItem[]
+
+  @@index([kitchenId], map: "idx_po_kitchen_id")
+  @@index([kitchenId, status], map: "idx_po_status")
+  @@map("purchase_orders")
+}
+
+// 12. Purchase Order Items
+model PurchaseOrderItem {
+  id               String         @id @default(uuid())
+  purchaseOrderId  String         @map("purchase_order_id")
+  purchaseOrder    PurchaseOrder  @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  ingredientId     String         @map("ingredient_id")
+  ingredient       Ingredient     @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+  ingredientName   String         @map("ingredient_name")
+  quantity         Float
+  receivedQuantity Float?         @map("received_quantity")
+  unit             IngredientUnit @default(g)
+  costPerUnit      Float          @map("cost_per_unit")
+
+  @@index([purchaseOrderId], map: "idx_po_items_po_id")
+  @@index([ingredientId], map: "idx_po_items_ingredient_id")
+  @@map("purchase_order_items")
+}
+
+// 13. Dispatch QA Checklist Rules
+model DispatchCheckRule {
+  id             String    @id @default(uuid())
+  kitchenId      String    @map("kitchen_id")
+  kitchen        Kitchen   @relation(fields: [kitchenId], references: [id], onDelete: Cascade)
+  label          String
+  category       String    @default("ALL") // "ALL" or "item:<menuItemId>"
+  targetItemName String?   @map("target_item_name")
+  description    String?
+  isDefault      Boolean   @default(false) @map("is_default")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@index([kitchenId], map: "idx_dispatch_rules_kitchen_id")
+  @@map("dispatch_check_rules")
 }

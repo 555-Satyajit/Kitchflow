@@ -1,12 +1,13 @@
 'use client'
 
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import { Order, PackingChecklist, DynamicChecklistItem } from '@/types'
-import { PackageCheck, Check, CheckCircle2, ShieldCheck, AlertCircle } from 'lucide-react'
+import { PackageCheck, Check, CheckCircle2, ShieldCheck, AlertCircle, Settings2 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn, formatStationName } from '@/lib/utils'
+import { getCustomDispatchRules, DispatchCheckRule } from './DispatchChecklistConfigModal'
 
 interface PackingViewProps {
   orders: Order[]
@@ -25,49 +26,91 @@ export function PackingView({
     (o) => o.status === 'PREPARING' || o.status === 'READY'
   )
 
+  const [customRules, setCustomRules] = useState<DispatchCheckRule[]>(() => getCustomDispatchRules())
+  const [customCheckedMap, setCustomCheckedMap] = useState<Record<string, Record<string, boolean>>>({})
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      setCustomRules(getCustomDispatchRules())
+    }
+    window.addEventListener('dispatch_rules_updated', handleUpdate)
+    window.addEventListener('storage', handleUpdate)
+    return () => {
+      window.removeEventListener('dispatch_rules_updated', handleUpdate)
+      window.removeEventListener('storage', handleUpdate)
+    }
+  }, [])
+
+  const toggleCustomCheck = (orderId: string, ruleId: string) => {
+    setCustomCheckedMap((prev) => {
+      const orderChecks = prev[orderId] || {}
+      return {
+        ...prev,
+        [orderId]: {
+          ...orderChecks,
+          [ruleId]: !orderChecks[ruleId],
+        },
+      }
+    })
+  }
+
   /**
    * Dynamically generate QA checklist tailored to the order's specific food items:
-   * 1. Cold Beverage Separation: ONLY if order contains beverages/cold drinks
-   * 2. Cutlery & Paper Spoons: Included for bowls/biryani/combos
-   * 3. Condiments & Sauces: Tailored to burger/biryani dips
-   * 4. Napkins & Wipes
-   * 5. Tamper-evident seal
    */
-  const getDynamicChecklist = (order: Order): { key: keyof PackingChecklist; label: string; applies: boolean; hint?: string }[] => {
+  const getDynamicChecklist = (order: Order) => {
     const hasBeverage = order.items.some(
       (it) => it.station === 'BEVERAGE' || it.name.toLowerCase().includes('chaas') || it.name.toLowerCase().includes('drink')
     )
     const hasBiryani = order.items.some((it) => it.name.toLowerCase().includes('biryani'))
     const hasBurgerOrWrap = order.items.some((it) => it.station === 'FRY' || it.station === 'GRILL')
 
-    return [
-      { 
-        key: 'cutlery', 
-        label: hasBiryani ? 'Biryani Wooden Spoon & Fork' : 'Eco-Friendly Cutlery', 
-        applies: true 
-      },
-      { 
-        key: 'saucesDips', 
-        label: hasBiryani ? 'Raita & Mirchi Ka Salan (Dips)' : hasBurgerOrWrap ? 'Secret Sauce & Dip Cups' : 'Condiments & Extra Dips', 
-        applies: true 
-      },
-      { 
-        key: 'napkins', 
-        label: `${order.brandName} Branded Napkins & Wipes`, 
-        applies: true 
-      },
-      { 
-        key: 'beverageSeparated', 
-        label: 'Cold Beverage Separation (Thermal Pouch)', 
-        applies: hasBeverage, 
-        hint: hasBeverage ? 'Mandatory: Keep chilled beverage isolated from hot food' : 'Not required (No cold drinks in this order)' 
-      },
-      { 
-        key: 'tamperSeal', 
-        label: 'Aggregator Barcode Tamper-Evident Bag Seal', 
-        applies: true 
-      },
-    ]
+    return customRules.map((r) => {
+      let applies = true
+      let hint: string | undefined = r.description || undefined
+
+      if (r.category === 'BEVERAGE') {
+        applies = hasBeverage
+        hint = hasBeverage ? 'Cold drink detected: Isolate from hot boxes' : 'N/A (No beverage in order)'
+      } else if (r.category === 'BIRYANI') {
+        applies = hasBiryani
+        hint = hasBiryani ? 'Biryani order: verify salan & raita' : 'N/A (Non-biryani order)'
+      } else if (r.category === 'FRY_GRILL') {
+        applies = hasBurgerOrWrap
+        hint = hasBurgerOrWrap ? 'Grill / Fry order: verify dip cups' : 'N/A (No burger/wrap)'
+      } else if (r.category.startsWith('item:')) {
+        const targetItemId = r.category.replace('item:', '')
+        const itemInOrder = order.items.some(
+          (it) => it.menuItemId === targetItemId || it.id === targetItemId || (r.targetItemName && it.name.toLowerCase().includes(r.targetItemName.toLowerCase()))
+        )
+        applies = itemInOrder
+        hint = itemInOrder
+          ? `${r.targetItemName || 'Target item'} ordered: QA verification required`
+          : `N/A (${r.targetItemName || 'Item'} not in order)`
+      }
+
+      // Check standard key if matching, otherwise custom map
+      let isChecked = false
+      if (r.id === 'rule-cutlery') isChecked = Boolean(order.checklist?.cutlery)
+      else if (r.id === 'rule-sauces') isChecked = Boolean(order.checklist?.saucesDips)
+      else if (r.id === 'rule-napkins') isChecked = Boolean(order.checklist?.napkins)
+      else if (r.id === 'rule-beverage') isChecked = Boolean(order.checklist?.beverageSeparated)
+      else if (r.id === 'rule-tamper') isChecked = Boolean(order.checklist?.tamperSeal)
+      else isChecked = Boolean(customCheckedMap[order.id]?.[r.id])
+
+      return {
+        id: r.id,
+        label: r.label,
+        applies,
+        hint,
+        isChecked,
+        isStandard: ['rule-cutlery', 'rule-sauces', 'rule-napkins', 'rule-beverage', 'rule-tamper'].includes(r.id),
+        standardKey: (r.id === 'rule-cutlery' ? 'cutlery' :
+                      r.id === 'rule-sauces' ? 'saucesDips' :
+                      r.id === 'rule-napkins' ? 'napkins' :
+                      r.id === 'rule-beverage' ? 'beverageSeparated' :
+                      r.id === 'rule-tamper' ? 'tamperSeal' : null) as keyof PackingChecklist | null,
+      }
+    })
   }
 
   return (
@@ -103,7 +146,7 @@ export function PackingView({
           packingOrders.map((order) => {
             const checks = getDynamicChecklist(order)
             // An order is verified if all *applicable* checks are passed
-            const isAllChecked = checks.every((c) => !c.applies || order.checklist[c.key])
+            const isAllChecked = checks.every((c) => !c.applies || c.isChecked)
             const isKdsReady = order.status === 'READY'
             const isSwiggy = order.channel === 'SWIGGY'
             const isZomato = order.channel === 'ZOMATO'
@@ -138,7 +181,17 @@ export function PackingView({
                         <span className="font-bold text-foreground">{order.brandName}</span>
                         <span>•</span>
                         <span className="truncate max-w-[140px] font-medium">{order.customerName}</span>
+                        {order.channel === 'DIRECT' && (
+                          <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 font-mono">
+                            Delivery
+                          </span>
+                        )}
                       </div>
+                      {order.customerAddress && (
+                        <p className="text-[11px] text-muted-foreground/90 font-medium truncate max-w-[200px]" title={order.customerAddress}>
+                          📍 {order.customerAddress}
+                        </p>
+                      )}
                     </div>
 
                     <span 
@@ -177,34 +230,38 @@ export function PackingView({
                       <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block font-mono">
                         Dynamic QA Verification:
                       </span>
-                      {checks.map(({ key, label, applies, hint }) => {
+                      {checks.map(({ id, label, applies, hint, isChecked, isStandard, standardKey }) => {
                         if (!applies) {
                           return (
                             <div 
-                              key={key} 
+                              key={id} 
                               className="p-2.5 rounded-xl border border-border/30 bg-muted/20 text-xs text-muted-foreground/60 flex items-center justify-between"
                             >
                               <span>{label}</span>
-                              <span className="text-[10px] font-mono text-muted-foreground/50">N/A (No Beverage)</span>
+                              <span className="text-[10px] font-mono text-muted-foreground/50">N/A (Condition Not Met)</span>
                             </div>
                           )
                         }
 
-                        const checked = order.checklist[key]
                         return (
                           <button
                             type="button"
-                            key={key}
-                            onClick={() => onToggleChecklistItem(order.id, key)}
+                            key={id}
+                            onClick={() => {
+                              if (isStandard && standardKey) {
+                                onToggleChecklistItem(order.id, standardKey)
+                              }
+                              toggleCustomCheck(order.id, id)
+                            }}
                             className={cn(
                               "w-full flex items-center justify-between p-2.5 sm:p-3 rounded-xl border text-xs transition-all cursor-pointer text-left min-h-[46px] group active:scale-[0.99]",
-                              checked
+                              isChecked
                                 ? "bg-card border-emerald-500/30 text-foreground font-medium shadow-2xs"
                                 : "bg-card border-border/70 text-muted-foreground hover:bg-muted/30"
                             )}
                           >
                             <div className="min-w-0 pr-2">
-                              <span className={cn("transition-colors leading-snug", checked && "text-foreground font-semibold")}>
+                              <span className={cn("transition-colors leading-snug", isChecked && "text-foreground font-semibold")}>
                                 {label}
                               </span>
                               {hint && (
@@ -215,11 +272,11 @@ export function PackingView({
                             </div>
                             <div className={cn(
                               "w-6 h-6 rounded-lg flex items-center justify-center border-2 transition-all shrink-0",
-                              checked 
+                              isChecked 
                                 ? "bg-emerald-600 border-emerald-600 text-white shadow-2xs" 
                                 : "border-border/80 bg-background group-hover:border-primary/60"
                             )}>
-                              {checked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                              {isChecked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                             </div>
                           </button>
                         )

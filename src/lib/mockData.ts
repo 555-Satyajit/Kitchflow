@@ -8,14 +8,32 @@ export const INITIAL_BRANDS: Brand[] = [
 ];
 
 export const INITIAL_INGREDIENTS: Ingredient[] = [
-  { id: 'i1', name: 'Basmati Rice', unit: 'g', currentStock: 7900, minThreshold: 2000, costPerUnit: 0.12 },
-  { id: 'i2', name: 'Chicken Breast / Curry Cut', unit: 'g', currentStock: 3760, minThreshold: 1500, costPerUnit: 0.28 },
-  { id: 'i3', name: 'Brioche Burger Bun', unit: 'pc', currentStock: 28, minThreshold: 10, costPerUnit: 18.00 },
-  { id: 'i4', name: 'Crispy Chicken Patty', unit: 'pc', currentStock: 18, minThreshold: 8, costPerUnit: 42.00 },
-  { id: 'i5', name: 'Tortilla Flatbread', unit: 'pc', currentStock: 35, minThreshold: 12, costPerUnit: 9.50 },
-  { id: 'i6', name: 'Spicy Secret Mayo', unit: 'ml', currentStock: 1200, minThreshold: 300, costPerUnit: 0.15 },
-  { id: 'i7', name: 'Biryani Gravy Base', unit: 'ml', currentStock: 3260, minThreshold: 1000, costPerUnit: 0.18 },
-  { id: 'i8', name: 'Mint Masala Chaas / Beverage', unit: 'ml', currentStock: 4500, minThreshold: 1000, costPerUnit: 0.08 },
+  // 1. Dry Staples (Kirana / Bulk Grains)
+  { id: 'i1', name: 'Basmati Rice (Daawat Royal)', category: 'DRY_STAPLES', supplierName: 'Metro Cash & Carry', storageZone: 'DRY_STORE', unit: 'g', currentStock: 7900, minThreshold: 2000, costPerUnit: 0.12 },
+  { id: 'i5', name: 'Tortilla Flatbread (10-inch)', category: 'DRY_STAPLES', supplierName: 'BakeCraft Distributors', storageZone: 'DRY_STORE', unit: 'pc', currentStock: 35, minThreshold: 12, costPerUnit: 9.50 },
+  { id: 'i3', name: 'Brioche Burger Bun', category: 'DRY_STAPLES', supplierName: 'The Artisan Bakery', storageZone: 'DRY_STORE', unit: 'pc', currentStock: 28, minThreshold: 10, costPerUnit: 18.00 },
+  
+  // 2. Meat & Poultry (Fresh Meat Vendor)
+  { id: 'i2', name: 'Chicken Breast / Curry Cut', category: 'MEAT_POULTRY', supplierName: 'FreshMeat Wholesale Hub', storageZone: 'CHILLER', unit: 'g', currentStock: 3760, minThreshold: 1500, costPerUnit: 0.28 },
+  { id: 'i4', name: 'Crispy Chicken Patty', category: 'MEAT_POULTRY', supplierName: 'Venky\'s Frozen Line', storageZone: 'FREEZER', unit: 'pc', currentStock: 18, minThreshold: 8, costPerUnit: 42.00 },
+
+  // 3. Central Prep (In-House Production)
+  { id: 'i6', name: 'Spicy Secret Mayo', category: 'CENTRAL_PREP', supplierName: 'Kitchen Base Prep', storageZone: 'CHILLER', unit: 'ml', currentStock: 1200, minThreshold: 300, costPerUnit: 0.15 },
+  { id: 'i7', name: 'Biryani Gravy Base', category: 'CENTRAL_PREP', supplierName: 'Kitchen Base Prep', storageZone: 'CHILLER', unit: 'ml', currentStock: 3260, minThreshold: 1000, costPerUnit: 0.18 },
+
+  // 4. Produce & Dairy
+  { id: 'i8', name: 'Mint Masala Chaas / Curd Base', category: 'PRODUCE_DAIRY', supplierName: 'Nandini Dairy Coop', storageZone: 'CHILLER', unit: 'ml', currentStock: 4500, minThreshold: 1000, costPerUnit: 0.08 },
+  { id: 'i9', name: 'Fresh Paneer (Malai Cubes)', category: 'PRODUCE_DAIRY', supplierName: 'Nandini Dairy Coop', storageZone: 'CHILLER', unit: 'g', currentStock: 1400, minThreshold: 500, costPerUnit: 0.35 },
+
+  // 5. Commercial Packaging & Disposables (Wholesale Packaging Vendor)
+  { id: 'i10', name: '1000ml Handi Bowl + Thermal Lid', category: 'PACKAGING', supplierName: 'PrintStop Pack Supplies', storageZone: 'PACKAGING_BAY', unit: 'pc', currentStock: 42, minThreshold: 20, costPerUnit: 14.50 },
+  { id: 'i11', name: 'Burger Clamshell Kraft Box', category: 'PACKAGING', supplierName: 'EcoPack Corrugators', storageZone: 'PACKAGING_BAY', unit: 'pc', currentStock: 65, minThreshold: 25, costPerUnit: 8.00 },
+  { id: 'i12', name: 'Cutlery Kit (Fork, Spoon, Napkin, Mint)', category: 'PACKAGING', supplierName: 'PrintStop Pack Supplies', storageZone: 'PACKAGING_BAY', unit: 'pc', currentStock: 120, minThreshold: 40, costPerUnit: 2.20 },
+  { id: 'i13', name: 'Heavy Kraft Carry Bag (Large)', category: 'PACKAGING', supplierName: 'EcoPack Corrugators', storageZone: 'PACKAGING_BAY', unit: 'pc', currentStock: 50, minThreshold: 15, costPerUnit: 6.50 },
+
+  // 6. Beverages & Bottled Goods (FMCG Bottler Distributor)
+  { id: 'i14', name: 'Coca-Cola Zero Can (330ml)', category: 'BEVERAGES_RETAIL', supplierName: 'Hindustan Coca-Cola Beverages', storageZone: 'CHILLER', unit: 'pc', currentStock: 24, minThreshold: 12, costPerUnit: 25.00 },
+  { id: 'i15', name: 'Thums Up Charged Can (330ml)', category: 'BEVERAGES_RETAIL', supplierName: 'Hindustan Coca-Cola Beverages', storageZone: 'CHILLER', unit: 'pc', currentStock: 18, minThreshold: 12, costPerUnit: 25.00 },
 ];
 
 export const INITIAL_MENU_ITEMS: MenuItem[] = [
@@ -36,7 +54,9 @@ export const INITIAL_MENU_ITEMS: MenuItem[] = [
       { ingredientId: 'i1', ingredientName: 'Basmati Rice', quantity: 300, unit: 'g' }, // 300g * 0.12 = 36.00
       { ingredientId: 'i2', ingredientName: 'Chicken Breast / Curry Cut', quantity: 220, unit: 'g' }, // 220g * 0.28 = 61.60
       { ingredientId: 'i7', ingredientName: 'Biryani Gravy Base', quantity: 120, unit: 'ml' }, // 120ml * 0.18 = 21.60
-      // Total 1x Biryani BOM = 36.00 + 61.60 + 21.60 = 119.20. For 2x Biryani BOM = 238.40.
+      { ingredientId: 'i10', ingredientName: '1000ml Handi Bowl + Thermal Lid', quantity: 1, unit: 'pc' }, // Packaging 14.50
+      { ingredientId: 'i12', ingredientName: 'Cutlery Kit (Fork, Spoon, Napkin, Mint)', quantity: 1, unit: 'pc' }, // Cutlery 2.20
+      // Total 1x Biryani BOM = 36.00 + 61.60 + 21.60 + 14.50 + 2.20 = 135.90.
     ]
   },
   {
@@ -56,7 +76,8 @@ export const INITIAL_MENU_ITEMS: MenuItem[] = [
       { ingredientId: 'i3', ingredientName: 'Brioche Burger Bun', quantity: 1, unit: 'pc' }, // 18.00
       { ingredientId: 'i4', ingredientName: 'Crispy Chicken Patty', quantity: 1, unit: 'pc' }, // 42.00
       { ingredientId: 'i6', ingredientName: 'Spicy Secret Mayo', quantity: 30, unit: 'ml' }, // 30ml * 0.15 = 4.50
-      // Total 1x Burger BOM = 18.00 + 42.00 + 4.50 = 64.50.
+      { ingredientId: 'i11', ingredientName: 'Burger Clamshell Kraft Box', quantity: 1, unit: 'pc' }, // Packaging 8.00
+      { ingredientId: 'i12', ingredientName: 'Cutlery Kit (Fork, Spoon, Napkin, Mint)', quantity: 1, unit: 'pc' }, // Cutlery 2.20
     ]
   },
   {
@@ -76,7 +97,7 @@ export const INITIAL_MENU_ITEMS: MenuItem[] = [
       { ingredientId: 'i5', ingredientName: 'Tortilla Flatbread', quantity: 1, unit: 'pc' }, // 9.50
       { ingredientId: 'i2', ingredientName: 'Chicken Breast / Curry Cut', quantity: 140, unit: 'g' }, // 140 * 0.28 = 39.20
       { ingredientId: 'i6', ingredientName: 'Spicy Secret Mayo', quantity: 25, unit: 'ml' }, // 25 * 0.15 = 3.75
-      // Total Wrap BOM = 52.45
+      { ingredientId: 'i13', ingredientName: 'Heavy Kraft Carry Bag (Large)', quantity: 1, unit: 'pc' }, // Bag 6.50
     ]
   },
   {
@@ -578,72 +599,7 @@ const order2Financials = calculateOrderFinancials({
   }
 }).financials;
 
-export const INITIAL_ORDERS: Order[] = [
-  {
-    id: 'ord-101',
-    orderNumber: '#SW-8491',
-    channel: 'SWIGGY',
-    brandId: 'b1',
-    brandName: 'Biryani Central',
-    customerName: 'Aarav Sharma',
-    status: 'PREPARING',
-    targetPrepMinutes: 14,
-    createdAt: new Date(Date.now() - 7 * 60 * 1000).toISOString(), // 7 mins ago
-    acknowledgedAt: new Date(Date.now() - 6.5 * 60 * 1000).toISOString(),
-    items: [
-      {
-        id: 'oi-1',
-        menuItemId: 'm1',
-        name: 'Hyderabadi Chicken Dum Biryani (Boneless)',
-        station: 'DUM_BIRYANI',
-        secondaryStations: ['ASSEMBLY', 'PACKING'],
-        quantity: 2,
-        price: 389,
-        stationDone: false,
-      }
-    ],
-    checklist: {
-      cutlery: true,
-      saucesDips: true,
-      napkins: true,
-      tamperSeal: false,
-      beverageSeparated: false,
-    },
-    financials: order1Financials,
-  },
-  {
-    id: 'ord-102',
-    orderNumber: '#ZM-3022',
-    channel: 'ZOMATO',
-    brandId: 'b2',
-    brandName: 'Burger Box',
-    customerName: 'Priya Iyer',
-    status: 'ACCEPTED',
-    targetPrepMinutes: 12,
-    createdAt: new Date(Date.now() - 2 * 60 * 1000).toISOString(), // 2 mins ago
-    acknowledgedAt: new Date(Date.now() - 1.5 * 60 * 1000).toISOString(),
-    items: [
-      {
-        id: 'oi-2',
-        menuItemId: 'm2',
-        name: 'OG Nashville Hot Crunch Burger',
-        station: 'FRY',
-        secondaryStations: ['GRILL', 'ASSEMBLY'],
-        quantity: 1,
-        price: 299,
-        stationDone: false,
-      }
-    ],
-    checklist: {
-      cutlery: false,
-      saucesDips: false,
-      napkins: false,
-      tamperSeal: false,
-      beverageSeparated: false,
-    },
-    financials: order2Financials,
-  }
-];
+export const INITIAL_ORDERS: Order[] = [];
 
 export const INITIAL_STOCK_LEDGER: StockLedgerEntry[] = [
   {

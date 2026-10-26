@@ -308,6 +308,11 @@ export function PurchaseOrderManagerModal({
                             <span className="text-[10px] font-mono text-muted-foreground px-1.5 py-0.5 bg-muted rounded-md">
                               {po.horizon}
                             </span>
+                            {po.category && (
+                              <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20">
+                                {po.category.replace('_', ' ')}
+                              </span>
+                            )}
                           </div>
 
                           <p className="text-xs font-bold text-foreground truncate pt-0.5">

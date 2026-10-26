@@ -7,9 +7,11 @@ import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn, formatStationName } from '@/lib/utils'
+import { useKitchen } from '@/context/KitchenContext'
 
 interface KDSViewProps {
   orders: Order[]
+  configuredStations?: Station[]
   onToggleStationItem: (orderId: string, itemId: string) => void
   onMarkOrderReady: (orderId: string) => void
   userRole?: string
@@ -17,26 +19,20 @@ interface KDSViewProps {
 
 export function KDSView({
   orders,
+  configuredStations = [],
   onToggleStationItem,
   onMarkOrderReady,
   userRole = 'OWNER',
 }: KDSViewProps) {
   // If in Cook mode, default station to DUM_BIRYANI instead of ALL
-  const [selectedStation, setSelectedStation] = useState<Station | 'ALL'>(() => {
-    return userRole === 'LINE_COOK' ? 'DUM_BIRYANI' : 'ALL'
-  })
+  const [selectedStation, setSelectedStation] = useState<Station | 'ALL'>('ALL')
   const [now, setNow] = useState<number>(0)
   const [mounted, setMounted] = useState<boolean>(false)
   const [soundEnabled, setSoundEnabled] = useState(true)
   const [managerAlertDismissed, setManagerAlertDismissed] = useState(false)
   const overdueAlertPlayedRef = React.useRef<Set<string>>(new Set())
 
-  // Keep selectedStation aligned if role flips to LINE_COOK
-  useEffect(() => {
-    if (userRole === 'LINE_COOK' && selectedStation === 'ALL') {
-      setSelectedStation('DUM_BIRYANI')
-    }
-  }, [userRole, selectedStation])
+  // selectedStation defaults to ALL unless filtered
 
   // Live 1-second ticker for precise live SLA countdown (client-only after mount)
   useEffect(() => {
@@ -68,18 +64,39 @@ export function KDSView({
     }
   }
 
-  const stations: (Station | 'ALL')[] = [
-    'ALL',
-    'GRILL',
-    'FRY',
-    'TANDOOR',
-    'DUM_BIRYANI',
-    'WOK',
-    'PIZZA',
-    'BEVERAGE',
-    'DESSERT',
-    'ASSEMBLY',
-  ]
+  // Dynamically detect stations configured on dishes and active in incoming orders
+  const activeStations = React.useMemo(() => {
+    const set = new Set<Station>()
+
+    // 1. Stations from currently active cook orders
+    orders.forEach((o) => {
+      if (o.status === 'ACCEPTED' || o.status === 'PREPARING') {
+        o.items.forEach((it) => {
+          if (it.station && it.station !== 'ASSEMBLY') {
+            set.add(it.station)
+          }
+        })
+      }
+    })
+
+    // 2. Only specialized stations actually assigned to real dishes in the database
+    if (configuredStations && configuredStations.length > 0) {
+      configuredStations.forEach((st) => {
+        if (st && st !== 'ASSEMBLY') {
+          set.add(st)
+        }
+      })
+    }
+
+    return Array.from(set)
+  }, [orders, configuredStations])
+
+  // If there are multiple active stations, show 'ALL' plus each active station.
+  // If no specialized stations are configured or active, stations array stays empty/hidden.
+  const stations: (Station | 'ALL')[] = React.useMemo(() => {
+    if (activeStations.length === 0) return []
+    return ['ALL', ...activeStations]
+  }, [activeStations])
 
   const activeOrders = orders.filter(
     (o) => o.status === 'ACCEPTED' || o.status === 'PREPARING'
@@ -102,6 +119,34 @@ export function KDSView({
   // Amber: 0 - 5 mins left
   // Red Pulsing: <= 0 (OVERDUE +Xm Xs)
   const getSLAStatus = (order: Order) => {
+    // If order is completed, ready, or dispatched, SLA timer stops running
+    if (order.status === 'DISPATCHED') {
+      return {
+        formatted: 'DISPATCHED',
+        isOverdue: false,
+        state: 'GREEN' as const,
+        remainingMinutes: 0,
+      }
+    }
+
+    if (order.status === 'READY') {
+      return {
+        formatted: 'READY',
+        isOverdue: false,
+        state: 'GREEN' as const,
+        remainingMinutes: 0,
+      }
+    }
+
+    if (order.status === 'CANCELLED') {
+      return {
+        formatted: 'CANCELLED',
+        isOverdue: false,
+        state: 'GREEN' as const,
+        remainingMinutes: 0,
+      }
+    }
+
     if (!mounted || now === 0) {
       return {
         formatted: `${order.targetPrepMinutes}m 00s left`,
@@ -144,9 +189,7 @@ export function KDSView({
 
   // Detect overdue orders and trigger sound alert & manager notification
   const overdueOrders = activeOrders.filter((o) => {
-    const createdTime = new Date(o.createdAt).getTime()
-    const targetMs = o.targetPrepMinutes * 60 * 1000
-    return mounted && now > 0 && (now - createdTime >= targetMs)
+    return mounted && now > 0 && getSLAStatus(o).isOverdue
   })
 
   // Play alert chime when an order first breaches SLA
@@ -205,7 +248,9 @@ export function KDSView({
             Kitchen Display (KDS)
           </h1>
           <p className="text-xs text-muted-foreground hidden sm:block mt-0.5">
-            Multi-station touch cook tickets & aggregated line batches
+            {stations.length > 0 
+              ? 'Multi-station touch cook tickets & aggregated line batches' 
+              : 'Live cook tickets & order prep stream'}
           </p>
         </div>
 
@@ -228,34 +273,36 @@ export function KDSView({
             )}
           </button>
 
-          {/* Apple HIG Scrollable Station Segmented Pill Control */}
-          <div className="flex-1 min-w-0 overflow-x-auto touch-pan-x no-scrollbar py-0.5">
-            <div 
-              role="tablist"
-              aria-label="Kitchen Stations"
-              className="inline-flex items-center p-1 bg-muted/60 dark:bg-muted/40 rounded-xl border border-border/60 shadow-xs gap-1"
-            >
-              {stations.map((st) => {
-                const isSelected = selectedStation === st
-                return (
-                  <button
-                    key={st}
-                    role="tab"
-                    aria-selected={isSelected}
-                    onClick={() => setSelectedStation(st)}
-                    className={cn(
-                      "px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer min-h-[32px] flex items-center justify-center",
-                      isSelected
-                        ? "bg-card text-foreground shadow-xs border border-border/50 font-bold"
-                        : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
-                    )}
-                  >
-                    <span>{formatStationName(st)}</span>
-                  </button>
-                )
-              })}
+          {/* Apple HIG Scrollable Station Segmented Pill Control - Only visible when multiple stations are active */}
+          {stations.length > 0 && (
+            <div className="flex-1 min-w-0 overflow-x-auto touch-pan-x no-scrollbar py-0.5">
+              <div 
+                role="tablist"
+                aria-label="Kitchen Stations"
+                className="inline-flex items-center p-1 bg-muted/60 dark:bg-muted/40 rounded-xl border border-border/60 shadow-xs gap-1"
+              >
+                {stations.map((st) => {
+                  const isSelected = selectedStation === st
+                  return (
+                    <button
+                      key={st}
+                      role="tab"
+                      aria-selected={isSelected}
+                      onClick={() => setSelectedStation(st)}
+                      className={cn(
+                        "px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer min-h-[32px] flex items-center justify-center",
+                        isSelected
+                          ? "bg-card text-foreground shadow-xs border border-border/50 font-bold"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
+                      )}
+                    >
+                      <span>{formatStationName(st)}</span>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
@@ -344,10 +391,15 @@ export function KDSView({
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground flex-wrap">
                         <span className="font-bold text-foreground">{order.brandName}</span>
                         <span>•</span>
                         <span className="truncate max-w-[130px] font-medium">{order.customerName}</span>
+                        {order.channel === 'DIRECT' && (
+                          <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 font-mono">
+                            Delivery
+                          </span>
+                        )}
                       </div>
                     </div>
 

@@ -25,7 +25,11 @@ interface MarginsViewProps {
 }
 
 export function MarginsView({ orders }: MarginsViewProps) {
-  const { commissionSettings, updateCommissionSettings, brands } = useKitchen()
+  const { 
+    commissionSettings, 
+    updateCommissionSettings, 
+    brands 
+  } = useKitchen()
   const [selectedBrand, setSelectedBrand] = useState<string>('ALL')
   const [selectedChannel, setSelectedChannel] = useState<string>('ALL')
   const [showConfigDrawer, setShowConfigDrawer] = useState<boolean>(false)

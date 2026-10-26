@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
@@ -23,8 +23,12 @@ import {
   Truck,
   Trash2,
   Bike,
-  User
+  User,
+  LogOut,
+  ClipboardCheck
 } from 'lucide-react'
+import { signOutFromSupabase } from '@/actions/auth'
+import { getNavCountsAction } from '@/features/orders/order-actions'
 import { useKitchen } from '@/context/KitchenContext'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -46,15 +50,11 @@ import { BrandManagerModal } from '@/components/brands/BrandManagerModal'
 import { PurchaseOrderManagerModal } from '@/components/inventory/PurchaseOrderManagerModal'
 import { PurchaseOrderModal } from '@/components/inventory/PurchaseOrderModal'
 import { WastageModal } from '@/components/inventory/WastageModal'
+import { DispatchChecklistConfigModal } from '@/components/packing/DispatchChecklistConfigModal'
 import { cn } from '@/lib/utils'
 
 export function AppHeader() {
   const pathname = usePathname()
-
-  // Completely isolate public customer invoice pages so customers never see inner kitchen software
-  if (pathname?.startsWith('/invoice')) {
-    return null
-  }
 
   const { 
     isPausedAll, 
@@ -62,7 +62,10 @@ export function AppHeader() {
     handleToggleEmergencyPause, 
     brands, 
     orders, 
+    isOrdersLoaded,
+    navCounts,
     ingredients,
+    menuItems,
     purchaseOrders,
     handleReceivePurchaseOrder,
     handleCreatePurchaseOrder,
@@ -80,11 +83,51 @@ export function AppHeader() {
   const [isPOManagerOpen, setIsPOManagerOpen] = useState(false)
   const [isCreatePOOpen, setIsCreatePOOpen] = useState(false)
   const [isWastageOpen, setIsWastageOpen] = useState(false)
+  const [isDispatchChecklistOpen, setIsDispatchChecklistOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
+  const [profileName, setProfileName] = useState('Sampad Jena')
+  const [storeName, setStoreName] = useState<string | null>(null)
+
+  useEffect(() => {
+    setMounted(true)
+    try {
+      const stored = localStorage.getItem('kitchflow_outlet_config')
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        if (parsed?.ownerCredentials?.name) {
+          setProfileName(parsed.ownerCredentials.name)
+        }
+        if (parsed?.name) {
+          setStoreName(parsed.name)
+        }
+      }
+    } catch (e) {
+      // Ignored
+    }
+  }, [])
+
+  // Completely isolate public customer invoice pages, auth pages, and internal team onboarding portal
+  if (
+    pathname?.startsWith('/invoice') ||
+    pathname?.startsWith('/admin') ||
+    pathname?.startsWith('/login') ||
+    pathname?.startsWith('/auth')
+  ) {
+    return null
+  }
 
   if (pathname === '/login') return null
 
-  const kdsPendingCount = orders.filter((o) => o.status === 'ACCEPTED' || o.status === 'PREPARING').length
-  const packingPendingCount = orders.filter((o) => o.status === 'PREPARING' || o.status === 'READY').length
+  // Dual-source conditional evaluation:
+  // If active page has populated context orders, derive dynamic filtered counts.
+  // Otherwise, fall back directly to authoritative recovery navCounts from PostgreSQL.
+  const liveOrderCount = orders.length > 0 ? orders.length : (navCounts?.ordersCount ?? 0)
+  const kdsPendingCount = orders.length > 0 
+    ? orders.filter((o) => o.status === 'ACCEPTED' || o.status === 'PREPARING').length
+    : (navCounts?.kdsCount ?? 0)
+  const packingPendingCount = orders.length > 0
+    ? orders.filter((o) => o.status === 'PREPARING' || o.status === 'READY').length
+    : (navCounts?.packingCount ?? 0)
   const lowStockCount = ingredients.filter((i) => i.currentStock <= i.minThreshold).length
 
   // Hindi localization labels dictionary
@@ -113,15 +156,18 @@ export function AppHeader() {
     }
   }[language]
 
+  const isNavReady = mounted && (isOrdersLoaded || navCounts !== null)
+
   const rawNavLinks = [
-    { href: '/orders', label: t.liveQueue, icon: ClipboardList, badge: orders.length, roleRequired: 'OWNER' },
-    { href: '/kds', label: t.kdsCook, icon: Flame, badge: kdsPendingCount },
-    { href: '/packing', label: t.dispatch, icon: PackageCheck, badge: packingPendingCount },
-    { href: '/inventory', label: t.inventory, icon: Boxes, badge: lowStockCount, roleRequired: 'OWNER' },
-    { href: '/margins', label: t.margins, icon: TrendingUp, roleRequired: 'OWNER' },
+    { href: '/orders', label: t.liveQueue, icon: ClipboardList, badge: liveOrderCount, isDynamic: true, roleRequired: 'OWNER' },
+    { href: '/kds', label: t.kdsCook, icon: Flame, badge: kdsPendingCount, isDynamic: true },
+    { href: '/packing', label: t.dispatch, icon: PackageCheck, badge: packingPendingCount, isDynamic: true },
+    { href: '/inventory', label: t.inventory, icon: Boxes, badge: lowStockCount, isDynamic: false, roleRequired: 'OWNER' },
+    { href: '/margins', label: t.margins, icon: TrendingUp, isDynamic: false, roleRequired: 'OWNER' },
   ]
 
-  const navLinks = rawNavLinks.filter((item) => !item.roleRequired || item.roleRequired === userRole)
+  const effectiveRole = mounted ? userRole : 'OWNER'
+  const navLinks = rawNavLinks.filter((item) => !item.roleRequired || item.roleRequired === effectiveRole)
 
   return (
     <>
@@ -142,9 +188,11 @@ export function AppHeader() {
                   unoptimized
                 />
               </div>
-              <span className="hidden xs:inline-flex text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground border border-border/60 ml-1">
-                {brands.length} Brands
-              </span>
+              {mounted && brands.length > 0 && (
+                <span className="hidden xs:inline-flex text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground border border-border/60 ml-1">
+                  {brands.length} Brands
+                </span>
+              )}
             </Link>
           </div>
 
@@ -167,17 +215,19 @@ export function AppHeader() {
                 >
                   <Icon className="w-3.5 h-3.5" />
                   <span>{item.label}</span>
-                  {Boolean(item.badge && item.badge > 0) && (
+                  {item.isDynamic && !isNavReady ? (
+                    <span className="h-3.5 w-5 rounded-full bg-muted animate-pulse inline-block" />
+                  ) : Boolean(item.badge && item.badge > 0) ? (
                     <Badge
                       variant={isActive ? "default" : "secondary"}
                       className={cn(
-                        "text-[10px] h-4 min-w-4 px-1 leading-none rounded-full flex items-center justify-center font-mono font-bold",
+                        "text-[10px] h-4 min-w-4 px-1 leading-none rounded-full flex items-center justify-center font-mono font-bold transition-transform animate-in fade-in duration-200",
                         isActive ? "bg-primary text-primary-foreground" : "bg-muted-foreground/20 text-foreground"
                       )}
                     >
                       {item.badge}
                     </Badge>
-                  )}
+                  ) : null}
                 </Link>
               )
             })}
@@ -194,10 +244,10 @@ export function AppHeader() {
                 className="flex items-center gap-1.5 px-3 h-8 sm:h-9 rounded-lg border border-border/80 bg-background/50 hover:bg-muted text-foreground text-xs font-bold shadow-2xs cursor-pointer transition-colors"
                 title="Open Management Drawer"
               >
-                <div className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center font-mono">
-                  <User className="w-3 h-3 text-primary" />
+                <div className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center font-mono uppercase text-[10px] font-bold">
+                  {profileName.charAt(0) || 'U'}
                 </div>
-                <span>Usalla</span>
+                <span>{profileName}</span>
               </button>
             </div>
 
@@ -293,8 +343,8 @@ export function AppHeader() {
                     <div className="p-3.5 rounded-2xl bg-card border border-border/80 shadow-xs flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <div className="relative">
-                          <div className="w-10 h-10 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center font-bold text-sm text-primary font-mono shadow-2xs">
-                            U
+                          <div className="w-10 h-10 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center font-bold text-sm text-primary font-mono shadow-2xs uppercase">
+                            {profileName.charAt(0) || 'U'}
                           </div>
                           <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-card" />
                         </div>
@@ -302,14 +352,14 @@ export function AppHeader() {
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-1.5">
                             <span className="text-sm font-bold text-foreground">
-                              Usalla
+                              {profileName}
                             </span>
                             <span className="text-[9px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.2 rounded-full bg-muted text-muted-foreground border border-border/60">
-                              Admin
+                              {userRole === 'OWNER' ? 'Owner' : 'Staff'}
                             </span>
                           </div>
-                          <span className="text-[11px] text-muted-foreground">
-                            Kitchen Manager • {userRole === 'OWNER' ? 'Owner Access' : 'Cook Access'}
+                          <span className="text-[11px] text-muted-foreground block truncate max-w-[170px]">
+                            {storeName ? `${storeName} • ` : ''}Live Shift
                           </span>
                         </div>
                       </div>
@@ -348,6 +398,31 @@ export function AppHeader() {
                           </div>
                           <ChevronRight className="w-4 h-4 text-muted-foreground/60 shrink-0" />
                         </Link>
+
+                        {/* Dispatch QA Checklist Option */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsMobileMenuOpen(false)
+                            setIsDispatchChecklistOpen(true)
+                          }}
+                          className="w-full flex items-center justify-between p-3.5 hover:bg-muted/40 transition-colors cursor-pointer group text-left"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/20 shadow-2xs">
+                              <ClipboardCheck className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-foreground group-hover:text-primary transition-colors">
+                                Dispatch QA Checklist
+                              </p>
+                              <p className="text-[10px] text-muted-foreground truncate">
+                                Configure items checked before sealing rider bags
+                              </p>
+                            </div>
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-muted-foreground/60 shrink-0" />
+                        </button>
 
                         {/* Supplier Orders & POs Row */}
                         <div className="p-3.5 space-y-2">
@@ -464,9 +539,20 @@ export function AppHeader() {
                     </div>
                   </div>
 
-                  {/* Drawer Footer Status */}
-                  <div className="p-4 border-t border-border/70 text-center bg-muted/20">
-                    <p className="text-[10px] text-muted-foreground font-mono">
+                  {/* Drawer Footer Status & Sign Out */}
+                  <div className="p-4 border-t border-border/70 space-y-2 bg-muted/20">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setIsMobileMenuOpen(false)
+                        await signOutFromSupabase()
+                      }}
+                      className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl border border-destructive/30 bg-destructive/10 hover:bg-destructive/20 text-destructive text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Sign Out from Kitchen Station</span>
+                    </button>
+                    <p className="text-[10px] text-muted-foreground font-mono text-center">
                       KitchFlow OS • v2.4 Multi-Brand
                     </p>
                   </div>
@@ -636,6 +722,13 @@ export function AppHeader() {
         onRecordWastage={(ingId, lossQty, note) => {
           handleAdjustStockWithReason(ingId, -lossQty, 'WASTAGE_SPOILAGE', note)
         }}
+      />
+
+      {/* Dispatch QA Verification Checklist Configuration Modal */}
+      <DispatchChecklistConfigModal
+        open={isDispatchChecklistOpen}
+        onOpenChange={setIsDispatchChecklistOpen}
+        menuItems={menuItems}
       />
     </>
   )

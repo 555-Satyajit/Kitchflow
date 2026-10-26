@@ -32,6 +32,8 @@ Kitchenos/
 │       │   │   │   ├── page.tsx       # Live Orders Queue (Aggregator feed)
 │       │   │   │   ├── kds/           # Kitchen Display System (Grill, Fry, Assembly)
 │       │   │   │   ├── packing/       # Packing Checklist Station
+│       │   │   │   ├── delivery/      # In-house Direct Rider Dispatch & Routing
+│       │   │   │   ├── pos/           # Fast Walk-in & Phone Order Register
 │       │   │   │   ├── inventory/     # Stock, Ingredients & Auto-86 Controls
 │       │   │   │   ├── menu/          # Multi-brand menu & Recipe BOM builder
 │       │   │   │   └── margins/       # True Margin & P&L analytics

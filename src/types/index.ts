@@ -63,6 +63,7 @@ export interface PurchaseOrder {
   id: string;
   poNumber: string;
   supplierName: string;
+  category?: InventoryCategory;
   horizon: 'MANUAL' | 'LOW_STOCK' | 'WEEKLY' | 'MONTHLY';
   status: PurchaseOrderStatus;
   items: PurchaseOrderItem[];
@@ -74,10 +75,23 @@ export interface PurchaseOrder {
   discrepancyNote?: string;
 }
 
+export type InventoryCategory = 
+  | 'PACKAGING'       // Boxes, Handis, Cutlery, Bags, Tapes
+  | 'MEAT_POULTRY'    // Chicken, Mutton, Fish, Seafood
+  | 'PRODUCE_DAIRY'   // Paneer, Milk, Cream, Herbs, Veggies
+  | 'DRY_STAPLES'     // Rice, Oils, Spices, Flour, Ghee
+  | 'BEVERAGES_RETAIL'// Cans, Bottled drinks, Dips, Packaged snacks
+  | 'CENTRAL_PREP';   // In-house master gravies, marinades, spice blends
+
+export type StorageZone = 'DRY_STORE' | 'CHILLER' | 'FREEZER' | 'PACKAGING_BAY' | 'STATION_LINE';
+
 export interface Ingredient {
   id: string;
   brandId?: string; // Optional: specific to a virtual brand or shared across kitchen if undefined
   name: string;
+  category?: InventoryCategory;
+  supplierName?: string;
+  storageZone?: StorageZone;
   unit: 'g' | 'ml' | 'pc' | 'kg' | 'l';
   currentStock: number;
   minThreshold: number;
@@ -116,6 +130,8 @@ export interface OrderItem {
   quantity: number;
   price: number;
   stationDone?: boolean;
+  updatedAt?: string;
+  version?: number;
 }
 
 export interface DynamicChecklistItem {
@@ -166,6 +182,8 @@ export interface Order {
   dynamicChecklist?: DynamicChecklistItem[];
   targetPrepMinutes: number;
   createdAt: string; // ISO
+  updatedAt?: string;
+  version?: number;
   acknowledgedAt?: string;
   readyAt?: string;
   financials: OrderFinancials;

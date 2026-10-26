@@ -83,6 +83,7 @@ export function BillReceiptModal({
       `*Date:* ${formattedDate}`,
       order.customerName ? `*Customer:* ${order.customerName}` : '',
       order.customerPhone ? `*Phone:* ${order.customerPhone}` : '',
+      order.customerAddress ? `*Delivery Address:* ${order.customerAddress}` : '',
       `------------------------------------`,
       `*ITEMS ORDERED:*`,
       ...order.items.map((it) => `- ${it.quantity}x ${it.name}: Rs. ${it.price * it.quantity}`),
@@ -289,6 +290,12 @@ export function BillReceiptModal({
                 <div className="flex justify-between">
                   <span className="text-zinc-500">Phone:</span>
                   <span>{order.customerPhone}</span>
+                </div>
+              )}
+              {order.customerAddress && (
+                <div className="flex justify-between">
+                  <span className="text-zinc-500">Address:</span>
+                  <span className="text-right truncate max-w-[150px]">{order.customerAddress}</span>
                 </div>
               )}
               <div className="flex justify-between">

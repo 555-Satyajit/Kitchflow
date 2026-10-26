@@ -33,10 +33,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { BillReceiptModal } from '@/components/pos/BillReceiptModal'
+import { createManualOrderAction, searchCustomersAction } from '@/features/orders/order-actions'
+import { createClient } from '@/lib/supabase/client'
 
 export default function POSPage() {
   const router = useRouter()
   const { brands, menuItems, orders, handleCreateManualOrder } = useKitchen()
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const [selectedBrandId, setSelectedBrandId] = useState<string>(brands[0]?.id || '')
   const [channel, setChannel] = useState<Channel>('WALK_IN')
@@ -47,6 +50,8 @@ export default function POSPage() {
   const [selectedStation, setSelectedStation] = useState<string>('ALL')
   const [cart, setCart] = useState<{ [menuItemId: string]: number }>({})
   const [customerFoundBadge, setCustomerFoundBadge] = useState(false)
+  const [customerSuggestions, setCustomerSuggestions] = useState<Array<{ name: string; phone: string; address?: string }>>([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
   const [isCartOpen, setIsCartOpen] = useState(false)
 
   // Billing & Payment States
@@ -80,22 +85,71 @@ export default function POSPage() {
     }
   }
 
-  // Handle phone change and auto-fill customer details if found
-  const handlePhoneChange = (phoneInput: string) => {
+  // Handle phone change and auto-fill customer details from DB & Local Directory
+  const handlePhoneChange = async (phoneInput: string) => {
     setCustomerPhone(phoneInput)
     const digits = phoneInput.replace(/\D/g, '')
 
-    if (digits.length >= 10) {
+    // 1. Instant local cache lookup
+    if (digits.length >= 4) {
       const directory = getSavedCustomers()
-      const match = directory[digits] || directory[digits.slice(-10)]
-      if (match) {
-        if (match.name) setCustomerName(match.name)
-        if (match.address) setCustomerAddress(match.address)
-        setCustomerFoundBadge(true)
-        return
+      const localMatches: Array<{ name: string; phone: string; address?: string }> = []
+      
+      for (const [savedPhone, details] of Object.entries(directory)) {
+        if (savedPhone.includes(digits) || details.name.toLowerCase().includes(phoneInput.toLowerCase())) {
+          localMatches.push({
+            phone: savedPhone,
+            name: details.name,
+            address: details.address,
+          })
+        }
       }
+
+      if (localMatches.length > 0) {
+        setCustomerSuggestions(localMatches.slice(0, 5))
+        setShowSuggestions(true)
+      }
+
+      // Exact match auto-fill
+      const exactMatch = directory[digits] || directory[digits.slice(-10)]
+      if (exactMatch) {
+        if (exactMatch.name) setCustomerName(exactMatch.name)
+        if (exactMatch.address) setCustomerAddress(exactMatch.address)
+        setCustomerFoundBadge(true)
+      } else {
+        setCustomerFoundBadge(false)
+      }
+
+      // 2. Query Postgres database asynchronously for any customer across all branch orders
+      try {
+        const res = await searchCustomersAction(digits)
+        if (res.ok && res.data && res.data.length > 0) {
+          setCustomerSuggestions(res.data.slice(0, 5))
+          setShowSuggestions(true)
+          if (!exactMatch && digits.length >= 10) {
+            const first = res.data[0]
+            if (first) {
+              setCustomerName(first.name)
+              if (first.address) setCustomerAddress(first.address)
+              setCustomerFoundBadge(true)
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('DB customer lookup fallback:', err)
+      }
+    } else {
+      setShowSuggestions(false)
+      setCustomerFoundBadge(false)
     }
-    setCustomerFoundBadge(false)
+  }
+
+  const handleSelectCustomer = (customer: { name: string; phone: string; address?: string }) => {
+    setCustomerPhone(customer.phone)
+    setCustomerName(customer.name)
+    if (customer.address) setCustomerAddress(customer.address)
+    setCustomerFoundBadge(true)
+    setShowSuggestions(false)
   }
 
   // Keep selected brand valid
@@ -142,9 +196,9 @@ export default function POSPage() {
   const grandTotal = cartSubtotal + gstAmount
   const changeToReturn = cashTendered ? Math.max(0, Number(cashTendered) - grandTotal) : 0
 
-  const handlePunchOrder = (e: React.FormEvent) => {
+  const handlePunchOrder = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (totalItemsCount === 0) return
+    if (totalItemsCount === 0 || isSubmitting) return
 
     const items = Object.entries(cart).map(([menuItemId, quantity]) => ({
       menuItemId,
@@ -168,22 +222,64 @@ export default function POSPage() {
       }
     }
 
-    const createdOrder = handleCreateManualOrder({
-      brandId: currentBrand.id,
-      channel,
-      customerName: customerName.trim(),
-      customerPhone: customerPhone.trim() || undefined,
-      customerAddress: customerAddress.trim() || undefined,
-      paymentMethod,
-      paymentStatus: paymentMethod === 'DUE' || paymentMethod === 'COD' ? 'PENDING' : 'PAID',
-      items,
-    })
+    setIsSubmitting(true)
+    try {
+      // 1. Optimistic update in KitchenContext state
+      const optimisticOrder = handleCreateManualOrder({
+        brandId: currentBrand.id,
+        channel,
+        customerName: customerName.trim(),
+        customerPhone: customerPhone.trim() || undefined,
+        customerAddress: customerAddress.trim() || undefined,
+        paymentMethod,
+        paymentStatus: paymentMethod === 'DUE' || paymentMethod === 'COD' ? 'PENDING' : 'PAID',
+        items,
+        skipServerPersist: true,
+      })
 
-    // Store created order, show Bill/WhatsApp modal, then reset cart
-    setCompletedOrder(createdOrder)
-    setIsReceiptOpen(true)
-    setCart({})
-    setCashTendered('')
+      // 2. Direct Server Action execution (nextjs-app-architecture)
+      const res = await createManualOrderAction({
+        brandId: currentBrand.id,
+        channel,
+        customerName: customerName.trim(),
+        customerPhone: customerPhone.trim() || undefined,
+        customerAddress: customerAddress.trim() || undefined,
+        paymentMethod,
+        items,
+      })
+
+      const actualOrderId = res.ok ? res.data.orderId : optimisticOrder.id
+      const actualOrderNumber = res.ok ? res.data.orderNumber : optimisticOrder.orderNumber
+
+      const finalOrder: Order = {
+        ...optimisticOrder,
+        id: actualOrderId,
+        orderNumber: actualOrderNumber,
+      }
+
+      // 3. Supabase Realtime WebSocket broadcast (sub-10ms KDS sync without DB WAL bottlenecks)
+      try {
+        const supabase = createClient()
+        const channelRef = supabase.channel('kitchen-global-kds')
+        channelRef.send({
+          type: 'broadcast',
+          event: 'order_status_changed',
+          payload: { orderId: actualOrderId, status: 'PREPARING' },
+        })
+      } catch (realtimeErr) {
+        console.warn('POS Realtime broadcast non-critical failure:', realtimeErr)
+      }
+
+      // 4. Show Bill/WhatsApp receipt modal & reset cart
+      setCompletedOrder(finalOrder)
+      setIsReceiptOpen(true)
+      setCart({})
+      setCashTendered('')
+    } catch (err) {
+      console.error('Failed to punch order:', err)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -307,7 +403,7 @@ export default function POSPage() {
             /* If Phone Delivery: Show Customer Phone (Lookup), Name & Address */
             <div className="space-y-2.5 p-3.5 rounded-2xl bg-card/90 border border-border/80 backdrop-blur-md shadow-2xs animate-in fade-in duration-150">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <div className="space-y-1">
+                <div className="space-y-1 relative">
                   <label className="text-[10px] font-semibold uppercase text-muted-foreground font-mono flex items-center justify-between">
                     <span className="flex items-center gap-1">
                       <PhoneCall className="w-3 h-3 text-primary" />
@@ -324,8 +420,53 @@ export default function POSPage() {
                     placeholder="e.g. 98765 43210"
                     value={customerPhone}
                     onChange={(e) => handlePhoneChange(e.target.value)}
+                    onFocus={() => {
+                      if (customerSuggestions.length > 0) setShowSuggestions(true);
+                    }}
                     className="h-10 text-xs bg-background rounded-xl border-border/80"
                   />
+
+                  {/* Customer Quick-Select Dropdown */}
+                  {showSuggestions && customerSuggestions.length > 0 && (
+                    <div className="absolute top-[102%] left-0 right-0 z-50 bg-popover/95 backdrop-blur-md border border-border/80 rounded-xl shadow-lg p-1.5 space-y-1 animate-in fade-in slide-in-from-top-1 duration-150">
+                      <div className="flex items-center justify-between px-2 py-0.5 border-b border-border/40">
+                        <span className="text-[9px] font-mono font-bold uppercase text-muted-foreground">
+                          Saved Customers ({customerSuggestions.length})
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowSuggestions(false)}
+                          className="text-[10px] text-muted-foreground hover:text-foreground cursor-pointer font-bold"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      <div className="max-h-40 overflow-y-auto space-y-1">
+                        {customerSuggestions.map((cust, idx) => (
+                          <button
+                            key={cust.phone + idx}
+                            type="button"
+                            onClick={() => handleSelectCustomer(cust)}
+                            className="w-full text-left p-2 rounded-lg hover:bg-muted/60 transition-all flex items-center justify-between gap-2 cursor-pointer active:scale-[0.99]"
+                          >
+                            <div className="min-w-0">
+                              <span className="text-xs font-bold text-foreground block truncate">
+                                {cust.name}
+                              </span>
+                              {cust.address && (
+                                <span className="text-[10px] text-muted-foreground truncate block">
+                                  {cust.address}
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[11px] font-mono font-semibold text-primary shrink-0 bg-primary/10 px-1.5 py-0.5 rounded-md">
+                              {cust.phone}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-1">
@@ -712,11 +853,20 @@ export default function POSPage() {
 
             <Button
               type="submit"
-              disabled={totalItemsCount === 0}
+              disabled={totalItemsCount === 0 || isSubmitting}
               className="h-10 px-5 text-xs font-extrabold gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm cursor-pointer disabled:opacity-40"
             >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Punch & Print Bill</span>
+              {isSubmitting ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>Punching Order...</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Punch & Print Bill</span>
+                </>
+              )}
             </Button>
           </div>
         </div>

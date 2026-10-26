@@ -40,6 +40,34 @@ export function OrdersQueueView({
 
   // Helper to compute remaining SLA time
   const getOrderSLA = (order: Order) => {
+    // If order is completed, dispatched, or ready, SLA timer is fulfilled and should stop running
+    if (order.status === 'DISPATCHED') {
+      return {
+        remainingSec: 9999,
+        isOverdue: false,
+        text: order.channel === 'DIRECT' ? 'OUT FOR DELIVERY' : 'HANDED TO RIDER',
+        state: 'GREEN' as const,
+      }
+    }
+
+    if (order.status === 'READY') {
+      return {
+        remainingSec: 9999,
+        isOverdue: false,
+        text: 'READY FOR PICKUP',
+        state: 'GREEN' as const,
+      }
+    }
+
+    if (order.status === 'CANCELLED') {
+      return {
+        remainingSec: 9999,
+        isOverdue: false,
+        text: 'CANCELLED',
+        state: 'GRAY' as const,
+      }
+    }
+
     if (!mounted || now === 0) {
       return {
         remainingSec: (order.targetPrepMinutes || 14) * 60,
@@ -280,7 +308,17 @@ export function OrdersQueueView({
                         <span className="font-bold text-foreground">{order.brandName}</span>
                         <span>•</span>
                         <span className="truncate max-w-[140px] font-medium">{order.customerName}</span>
+                        {order.channel === 'DIRECT' && (
+                          <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 font-mono">
+                            Delivery
+                          </span>
+                        )}
                       </div>
+                      {order.customerAddress && (
+                        <p className="text-[11px] text-muted-foreground/80 truncate max-w-[220px]" title={order.customerAddress}>
+                          📍 {order.customerAddress}
+                        </p>
+                      )}
                     </div>
 
                     {/* Right: Status Pill & SLA Countdown */}
@@ -302,17 +340,24 @@ export function OrdersQueueView({
                       </span>
 
                       {/* Live SLA Countdown Pill */}
-                      <span className={cn(
-                        "text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex items-center gap-1 font-mono",
-                        sla.state === 'RED' 
-                          ? "bg-red-600 text-white font-bold animate-pulse" 
-                          : sla.state === 'AMBER' 
-                          ? "bg-amber-500/20 text-amber-800 dark:text-amber-300 font-bold" 
-                          : "text-muted-foreground bg-muted/60"
-                      )}>
-                        <Clock className="w-2.5 h-2.5" />
-                        <span>{sla.text}</span>
-                      </span>
+                      {order.status !== 'DISPATCHED' && order.status !== 'CANCELLED' ? (
+                        <span className={cn(
+                          "text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex items-center gap-1 font-mono",
+                          sla.state === 'RED' 
+                            ? "bg-red-600 text-white font-bold animate-pulse" 
+                            : sla.state === 'AMBER' 
+                            ? "bg-amber-500/20 text-amber-800 dark:text-amber-300 font-bold" 
+                            : "text-muted-foreground bg-muted/60"
+                        )}>
+                          <Clock className="w-2.5 h-2.5" />
+                          <span>{sla.text}</span>
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md flex items-center gap-1 font-mono text-muted-foreground bg-muted/40">
+                          <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500" />
+                          <span>Fulfilled</span>
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -418,7 +463,7 @@ export function OrdersQueueView({
                         onClick={() => onUpdateStatus(order.id, 'DISPATCHED')}
                         className="text-xs h-8 px-3.5 font-bold shadow-xs bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer rounded-lg"
                       >
-                        Hand to Rider
+                        {order.channel === 'DIRECT' ? 'Out for Delivery' : 'Hand to Rider'}
                       </Button>
                     )}
                   </div>

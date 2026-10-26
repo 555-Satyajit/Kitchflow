@@ -1,18 +1,18 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Brand, Ingredient, MenuItem, Station, StockReasonCode, StockLedgerEntry } from '@/types'
-import { formatCurrency } from '@/lib/utils'
-import { 
-  Boxes, 
-  AlertTriangle, 
-  CheckCircle2, 
-  XCircle, 
-  Plus, 
-  Utensils, 
-  PackagePlus, 
-  BookOpen, 
-  History, 
+import { Brand, Ingredient, MenuItem, Station, StockReasonCode, StockLedgerEntry, PurchaseOrder, InventoryCategory, StorageZone } from '@/types'
+import { formatCurrency, formatStationName } from '@/lib/utils'
+import {
+  Boxes,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  Plus,
+  Utensils,
+  PackagePlus,
+  BookOpen,
+  History,
   RefreshCw,
   Layers,
   Sparkles,
@@ -29,7 +29,9 @@ import {
   LayoutList,
   LayoutGrid,
   Search,
-  Minus
+  Minus,
+  Check,
+  ChevronsUpDown
 } from 'lucide-react'
 import { estimateRecipeBOM, AIBOMSuggestion } from '@/lib/aiBOMEstimator'
 import { Card } from '@/components/ui/card'
@@ -37,6 +39,27 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandSeparator,
+} from '@/components/ui/command'
 import { PurchaseOrderModal } from '@/components/inventory/PurchaseOrderModal'
 import {
   Dialog,
@@ -61,6 +84,7 @@ interface InventoryViewProps {
   menuItems: MenuItem[]
   brands: Brand[]
   stockLedger: StockLedgerEntry[]
+  purchaseOrders?: PurchaseOrder[]
   userRole?: string
   onAdjustStockWithReason: (ingredientId: string, delta: number, reason: StockReasonCode, note?: string) => void
   onTogglePlatformStatus: (itemId: string, platform: 'SWIGGY' | 'ZOMATO') => void
@@ -68,6 +92,8 @@ interface InventoryViewProps {
   onAddIngredient: (newIng: Omit<Ingredient, 'id'>) => void
   onUpdateMenuItemPrice?: (menuItemId: string, newSellingPrice: number, newPackagingCost?: number) => void
   onUpdateIngredientCost?: (ingredientId: string, newCostPerUnit: number) => void
+  onCreatePurchaseOrder?: any
+  onReceivePurchaseOrder?: any
 }
 
 export function InventoryView({
@@ -75,6 +101,7 @@ export function InventoryView({
   menuItems,
   brands,
   stockLedger,
+  purchaseOrders = [],
   userRole = 'OWNER',
   onAdjustStockWithReason,
   onTogglePlatformStatus,
@@ -82,10 +109,14 @@ export function InventoryView({
   onAddIngredient,
   onUpdateMenuItemPrice,
   onUpdateIngredientCost,
+  onCreatePurchaseOrder,
+  onReceivePurchaseOrder,
 }: InventoryViewProps) {
   const lowStockItems = ingredients.filter((i) => i.currentStock <= i.minThreshold)
   const [activeTab, setActiveTab] = useState<'STOCK' | 'MENU' | 'LEDGER'>('STOCK')
   const [selectedBrandFilter, setSelectedBrandFilter] = useState<string>('ALL')
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('ALL')
+  const [selectedStockStatusFilter, setSelectedStockStatusFilter] = useState<'ALL' | 'LOW' | 'OUT'>('ALL')
   const [stockViewMode, setStockViewMode] = useState<'TABLE' | 'CARDS'>('TABLE')
   const [ingredientSearch, setIngredientSearch] = useState<string>('')
   const [isPurchaseOrderOpen, setIsPurchaseOrderOpen] = useState(false)
@@ -110,6 +141,10 @@ export function InventoryView({
   const [newItemName, setNewItemName] = useState('')
   const [newItemBrandId, setNewItemBrandId] = useState(brands[0]?.id || '')
   const [newItemStation, setNewItemStation] = useState<Station>('ASSEMBLY')
+  const [showMultiStations, setShowMultiStations] = useState(false)
+  const [customStations, setCustomStations] = useState<Array<{ id: string; label: string }>>([])
+  const [isStationPopoverOpen, setIsStationPopoverOpen] = useState(false)
+  const [stationSearchQuery, setStationSearchQuery] = useState('')
   const [newItemPrice, setNewItemPrice] = useState('249')
   const [newItemPkgCost, setNewItemPkgCost] = useState('15')
   const [newItemDescription, setNewItemDescription] = useState('')
@@ -135,6 +170,9 @@ export function InventoryView({
       const suggestion = estimateRecipeBOM(nameToAnalyze)
       setAiSuggestion(suggestion)
       setNewItemStation(suggestion.station)
+      if (suggestion.station !== 'ASSEMBLY') {
+        setShowMultiStations(true)
+      }
       setNewItemPrice(suggestion.suggestedPrice.toString())
       setNewItemPkgCost(suggestion.packagingCost.toString())
       setNewItemDescription(suggestion.description)
@@ -240,6 +278,9 @@ export function InventoryView({
   const [isIngDialogOpen, setIsIngDialogOpen] = useState(false)
   const [newIngName, setNewIngName] = useState('')
   const [newIngBrandId, setNewIngBrandId] = useState<string>('SHARED')
+  const [newIngCategory, setNewIngCategory] = useState<InventoryCategory>('DRY_STAPLES')
+  const [newIngSupplier, setNewIngSupplier] = useState<string>('')
+  const [newIngStorageZone, setNewIngStorageZone] = useState<StorageZone>('DRY_STORE')
   const [newIngUnit, setNewIngUnit] = useState<'g' | 'ml' | 'pc' | 'kg' | 'l'>('g')
   const [newIngStock, setNewIngStock] = useState('1000')
   const [newIngThreshold, setNewIngThreshold] = useState('300')
@@ -255,7 +296,7 @@ export function InventoryView({
         (i) => i.name.toLowerCase() === r.ingredientName.toLowerCase()
       )
       const ingId = existingIng?.id || `i-ai-${Date.now()}-${idx}`
-      
+
       // Auto-create in inventory stockroom if it doesn't exist yet
       if (!existingIng) {
         onAddIngredient({
@@ -304,6 +345,9 @@ export function InventoryView({
     onAddIngredient({
       brandId: newIngBrandId === 'SHARED' ? undefined : newIngBrandId,
       name: newIngName.trim(),
+      category: newIngCategory,
+      supplierName: newIngSupplier.trim() || undefined,
+      storageZone: newIngStorageZone,
       unit: newIngUnit,
       currentStock: parseFloat(newIngStock) || 500,
       minThreshold: parseFloat(newIngThreshold) || 100,
@@ -311,6 +355,9 @@ export function InventoryView({
     })
 
     setNewIngName('')
+    setNewIngSupplier('')
+    setNewIngCategory('DRY_STAPLES')
+    setNewIngStorageZone('DRY_STORE')
     setIsIngDialogOpen(false)
   }
 
@@ -436,21 +483,75 @@ export function InventoryView({
                       <Store className="w-3.5 h-3.5 text-primary" />
                       <span>Brand Allocation</span>
                     </Label>
-                    <select
-                      id="ing-brand"
-                      value={newIngBrandId}
-                      onChange={(e) => setNewIngBrandId(e.target.value)}
-                      className="w-full h-10 rounded-xl border border-border/80 bg-background px-3 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    >
-                      <option value="SHARED" className="bg-background text-foreground font-semibold">
-                        🌐 Shared Kitchen Inventory (All Brands)
-                      </option>
-                      {brands.map((b) => (
-                        <option key={b.id} value={b.id} className="bg-background text-foreground">
-                          {b.name} (Exclusive)
-                        </option>
-                      ))}
-                    </select>
+                    <Select value={newIngBrandId} onValueChange={setNewIngBrandId}>
+                      <SelectTrigger id="ing-brand" className="w-full h-10 rounded-xl border border-border/80 bg-background text-xs font-medium">
+                        <SelectValue placeholder="Select Brand" />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl border border-border/80 bg-popover text-popover-foreground shadow-lg">
+                        <SelectItem value="SHARED" className="text-xs font-semibold">
+                          Shared Kitchen Inventory (All Brands)
+                        </SelectItem>
+                        {brands.map((b) => (
+                          <SelectItem key={b.id} value={b.id} className="text-xs">
+                            {b.name} (Exclusive)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Category & Storage Zone Grid */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="ing-cat" className="text-xs font-semibold">
+                        Category
+                      </Label>
+                      <Select value={newIngCategory} onValueChange={(val) => setNewIngCategory(val as InventoryCategory)}>
+                        <SelectTrigger id="ing-cat" className="w-full h-10 rounded-xl border border-border/80 bg-background text-xs font-medium">
+                          <SelectValue placeholder="Category" />
+                        </SelectTrigger>
+                        <SelectContent className="rounded-xl border border-border/80 bg-popover text-popover-foreground shadow-lg">
+                          <SelectItem value="DRY_STAPLES" className="text-xs">Dry Staples & Spices</SelectItem>
+                          <SelectItem value="PRODUCE_DAIRY" className="text-xs">Dairy & Fresh Produce</SelectItem>
+                          <SelectItem value="MEAT_POULTRY" className="text-xs">Meat & Poultry</SelectItem>
+                          <SelectItem value="PACKAGING" className="text-xs">Packaging & Disposables</SelectItem>
+                          <SelectItem value="BEVERAGES_RETAIL" className="text-xs">Retail Drinks & Cans</SelectItem>
+                          <SelectItem value="CENTRAL_PREP" className="text-xs">Central Base & Marinades</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="ing-zone" className="text-xs font-semibold">
+                        Storage Location
+                      </Label>
+                      <Select value={newIngStorageZone} onValueChange={(val) => setNewIngStorageZone(val as StorageZone)}>
+                        <SelectTrigger id="ing-zone" className="w-full h-10 rounded-xl border border-border/80 bg-background text-xs font-medium">
+                          <SelectValue placeholder="Storage Location" />
+                        </SelectTrigger>
+                        <SelectContent className="rounded-xl border border-border/80 bg-popover text-popover-foreground shadow-lg">
+                          <SelectItem value="DRY_STORE" className="text-xs">Dry Store Room</SelectItem>
+                          <SelectItem value="CHILLER" className="text-xs">Walk-in Chiller</SelectItem>
+                          <SelectItem value="FREEZER" className="text-xs">Deep Freezer (-18°C)</SelectItem>
+                          <SelectItem value="PACKAGING_BAY" className="text-xs">Packaging Dispatch Bay</SelectItem>
+                          <SelectItem value="STATION_LINE" className="text-xs">Cook Station Line</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {/* Supplier / Vendor Name */}
+                  <div className="space-y-1.5">
+                    <Label htmlFor="ing-supplier" className="text-xs font-semibold">
+                      Supplier / Vendor Name
+                    </Label>
+                    <Input
+                      id="ing-supplier"
+                      placeholder="e.g. Metro Cash & Carry / Wholesale Mandi"
+                      value={newIngSupplier}
+                      onChange={(e) => setNewIngSupplier(e.target.value)}
+                      className="h-10 text-xs sm:text-sm bg-background rounded-xl border-border/80"
+                    />
                   </div>
 
                   {/* Unit & Unit Cost Grid */}
@@ -459,18 +560,18 @@ export function InventoryView({
                       <Label htmlFor="ing-unit" className="text-xs font-semibold">
                         Stock Unit
                       </Label>
-                      <select
-                        id="ing-unit"
-                        value={newIngUnit}
-                        onChange={(e) => setNewIngUnit(e.target.value as 'g' | 'ml' | 'pc' | 'kg' | 'l')}
-                        className="w-full h-10 rounded-xl border border-border/80 bg-background px-3 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                      >
-                        <option value="g" className="bg-background text-foreground">g (grams)</option>
-                        <option value="ml" className="bg-background text-foreground">ml (milliliters)</option>
-                        <option value="pc" className="bg-background text-foreground">pc (pieces)</option>
-                        <option value="kg" className="bg-background text-foreground">kg (kilograms)</option>
-                        <option value="l" className="bg-background text-foreground">l (liters)</option>
-                      </select>
+                      <Select value={newIngUnit} onValueChange={(val) => setNewIngUnit(val as 'g' | 'ml' | 'pc' | 'kg' | 'l')}>
+                        <SelectTrigger id="ing-unit" className="w-full h-10 rounded-xl border border-border/80 bg-background text-xs font-medium">
+                          <SelectValue placeholder="Unit" />
+                        </SelectTrigger>
+                        <SelectContent className="rounded-xl border border-border/80 bg-popover text-popover-foreground shadow-lg">
+                          <SelectItem value="g" className="text-xs">g (grams)</SelectItem>
+                          <SelectItem value="ml" className="text-xs">ml (milliliters)</SelectItem>
+                          <SelectItem value="pc" className="text-xs">pc (pieces)</SelectItem>
+                          <SelectItem value="kg" className="text-xs">kg (kilograms)</SelectItem>
+                          <SelectItem value="l" className="text-xs">l (liters)</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
 
                     <div className="space-y-1.5">
@@ -614,8 +715,8 @@ export function InventoryView({
                             title={isListening ? 'Listening... click to stop' : 'Click and speak dish name (Hinglish/English)'}
                             className={cn(
                               "absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full transition-all cursor-pointer",
-                              isListening 
-                                ? "bg-red-500 text-white animate-pulse shadow-md" 
+                              isListening
+                                ? "bg-red-500 text-white animate-pulse shadow-md"
                                 : "text-muted-foreground hover:text-foreground hover:bg-muted"
                             )}
                           >
@@ -698,7 +799,7 @@ export function InventoryView({
                                 <span className="font-medium text-foreground truncate max-w-[140px]">
                                   {ing.ingredientName}
                                 </span>
-                                
+
                                 <div className="flex items-center gap-2">
                                   {/* Quantity Stepper */}
                                   <div className="flex items-center border border-border rounded bg-muted/30 overflow-hidden">
@@ -751,7 +852,9 @@ export function InventoryView({
                         </div>
 
                         <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-1 border-t border-border/60 font-mono">
-                          <span>Station: {aiSuggestion.station}</span>
+                          <span>
+                            Station: {customStations.find((c) => c.id === newItemStation)?.label || formatStationName(newItemStation)}
+                          </span>
                           <span>Suggested Pkg: ₹{aiSuggestion.packagingCost}</span>
                         </div>
                       </div>
@@ -775,24 +878,176 @@ export function InventoryView({
                       </div>
 
                       <div className="space-y-1.5">
-                        <Label htmlFor="menu-station">Cook Station</Label>
-                        <select
-                          id="menu-station"
-                          value={newItemStation}
-                          onChange={(e) => setNewItemStation(e.target.value as Station)}
-                          className="w-full h-9 rounded-md border border-input bg-transparent px-3 text-xs font-mono"
-                        >
-                          <option value="ASSEMBLY" className="bg-background text-foreground">ASSEMBLY (Cold & Plating)</option>
-                          <option value="TANDOOR" className="bg-background text-foreground">TANDOOR (Clay Oven & Breads)</option>
-                          <option value="DUM_BIRYANI" className="bg-background text-foreground">DUM_BIRYANI (Dum Pots)</option>
-                          <option value="GRILL" className="bg-background text-foreground">GRILL (Tawa & Burgers)</option>
-                          <option value="FRY" className="bg-background text-foreground">FRY (Deep Fryers)</option>
-                          <option value="WOK" className="bg-background text-foreground">WOK (Chinese & Asian Stir-Fry)</option>
-                          <option value="PIZZA" className="bg-background text-foreground">PIZZA (Deck Oven)</option>
-                          <option value="BEVERAGE" className="bg-background text-foreground">BEVERAGE (Shakes, Drinks, Chai)</option>
-                          <option value="DESSERT" className="bg-background text-foreground">DESSERT (Sweets & Bakery)</option>
-                          <option value="PACKING" className="bg-background text-foreground">PACKING (Dispatch Counter)</option>
-                        </select>
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor="menu-station">Cook Station</Label>
+                          {newItemStation !== 'ASSEMBLY' ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNewItemStation('ASSEMBLY')
+                                setShowMultiStations(false)
+                              }}
+                              className="text-[10px] text-muted-foreground hover:text-foreground hover:underline font-semibold cursor-pointer"
+                              title="Reset back to Main Kitchen"
+                            >
+                              Reset to Main Kitchen
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setShowMultiStations(!showMultiStations)}
+                              className="text-[10px] text-primary hover:underline font-semibold cursor-pointer"
+                            >
+                              {showMultiStations ? 'Hide Specialized' : '+ Specific Station'}
+                            </button>
+                          )}
+                        </div>
+
+                        <Popover open={isStationPopoverOpen} onOpenChange={setIsStationPopoverOpen}>
+                          <PopoverTrigger asChild>
+                            <Button
+                              id="menu-station"
+                              type="button"
+                              variant="outline"
+                              role="combobox"
+                              aria-expanded={isStationPopoverOpen}
+                              className="w-full h-9 justify-between text-xs font-normal border-border/80 bg-background hover:bg-muted/40 cursor-pointer"
+                            >
+                              <span className="truncate font-semibold">
+                                {newItemStation === 'ASSEMBLY'
+                                  ? 'Main Kitchen (Default)'
+                                  : customStations.find((c) => c.id === newItemStation)?.label ||
+                                  formatStationName(newItemStation)}
+                              </span>
+                              <ChevronsUpDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-[320px] p-0" align="start">
+                            <Command>
+                              <CommandInput
+                                placeholder="Search or type new station..."
+                                value={stationSearchQuery}
+                                onValueChange={setStationSearchQuery}
+                                className="h-9 text-xs"
+                              />
+                              <CommandList className="max-h-[220px]">
+                                <CommandEmpty className="py-2 px-3 text-xs text-muted-foreground">
+                                  {stationSearchQuery.trim() ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const clean = stationSearchQuery.trim()
+                                        const id = clean.toUpperCase().replace(/\s+/g, '_') as Station
+                                        if (!customStations.some((c) => c.id === id)) {
+                                          setCustomStations((prev) => [...prev, { id, label: clean }])
+                                        }
+                                        setNewItemStation(id)
+                                        setStationSearchQuery('')
+                                        setIsStationPopoverOpen(false)
+                                      }}
+                                      className="w-full text-left font-semibold text-primary hover:underline flex items-center gap-1.5 cursor-pointer"
+                                    >
+                                      <Plus className="w-3.5 h-3.5" />
+                                      <span>Create &quot;{stationSearchQuery.trim()}&quot;</span>
+                                    </button>
+                                  ) : (
+                                    'No station found.'
+                                  )}
+                                </CommandEmpty>
+
+                                <CommandGroup heading="Default">
+                                  <CommandItem
+                                    value="Main Kitchen / All-in-One Counter"
+                                    onSelect={() => {
+                                      setNewItemStation('ASSEMBLY')
+                                      setIsStationPopoverOpen(false)
+                                    }}
+                                    className="text-xs cursor-pointer justify-between font-semibold"
+                                  >
+                                    <span> Main Kitchen (Default)</span>
+                                    {newItemStation === 'ASSEMBLY' && <Check className="w-3.5 h-3.5 text-primary" />}
+                                  </CommandItem>
+                                </CommandGroup>
+
+                                {customStations.length > 0 && (
+                                  <CommandGroup heading="Custom Stations">
+                                    {customStations.map((cs) => (
+                                      <CommandItem
+                                        key={cs.id}
+                                        value={cs.label}
+                                        onSelect={() => {
+                                          setNewItemStation(cs.id as Station)
+                                          setIsStationPopoverOpen(false)
+                                        }}
+                                        className="text-xs cursor-pointer justify-between text-primary font-medium"
+                                      >
+                                        <span>⭐ {cs.label}</span>
+                                        {newItemStation === cs.id && <Check className="w-3.5 h-3.5 text-primary" />}
+                                      </CommandItem>
+                                    ))}
+                                  </CommandGroup>
+                                )}
+
+                                {showMultiStations && (
+                                  <CommandGroup heading="Specialized Stations">
+                                    {[
+                                      { id: 'GRILL', label: 'Grill & Tawa Line' },
+                                      { id: 'FRY', label: 'Fryer Station' },
+                                      { id: 'BEVERAGE', label: 'Beverage & Shake Bar' },
+                                      { id: 'PIZZA', label: 'Pizza & Baking Deck' },
+                                      { id: 'WOK', label: 'Wok & Chinese Line' },
+                                      { id: 'TANDOOR', label: 'Tandoor & Breads' },
+                                      { id: 'DUM_BIRYANI', label: 'Dum Biryani Section' },
+                                      { id: 'DESSERT', label: 'Desserts & Sweets' },
+                                      { id: 'PACKING', label: 'Packing / Dispatch Only' },
+                                    ].map((st) => (
+                                      <CommandItem
+                                        key={st.id}
+                                        value={st.label}
+                                        onSelect={() => {
+                                          setNewItemStation(st.id as Station)
+                                          setIsStationPopoverOpen(false)
+                                        }}
+                                        className="text-xs cursor-pointer justify-between"
+                                      >
+                                        <span>{st.label}</span>
+                                        {newItemStation === st.id && <Check className="w-3.5 h-3.5 text-primary" />}
+                                      </CommandItem>
+                                    ))}
+                                  </CommandGroup>
+                                )}
+
+                                {stationSearchQuery.trim() &&
+                                  !['Main Kitchen', ...customStations.map((c) => c.label)].some(
+                                    (l) => l.toLowerCase() === stationSearchQuery.trim().toLowerCase()
+                                  ) && (
+                                    <>
+                                      <CommandSeparator />
+                                      <CommandGroup>
+                                        <CommandItem
+                                          value={`add-${stationSearchQuery.trim()}`}
+                                          onSelect={() => {
+                                            const clean = stationSearchQuery.trim()
+                                            const id = clean.toUpperCase().replace(/\s+/g, '_') as Station
+                                            if (!customStations.some((c) => c.id === id)) {
+                                              setCustomStations((prev) => [...prev, { id, label: clean }])
+                                            }
+                                            setNewItemStation(id)
+                                            setStationSearchQuery('')
+                                            setIsStationPopoverOpen(false)
+                                          }}
+                                          className="text-xs cursor-pointer text-primary font-bold gap-1.5"
+                                        >
+                                          <Plus className="w-3.5 h-3.5" />
+                                          <span>Add new station: &quot;{stationSearchQuery.trim()}&quot;</span>
+                                        </CommandItem>
+                                      </CommandGroup>
+                                    </>
+                                  )}
+                              </CommandList>
+                            </Command>
+                          </PopoverContent>
+                        </Popover>
                       </div>
                     </div>
 
@@ -896,8 +1151,8 @@ export function InventoryView({
                             title={isListening ? 'Listening...' : 'Voice input'}
                             className={cn(
                               "absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg transition-all cursor-pointer",
-                              isListening 
-                                ? "bg-destructive text-destructive-foreground animate-pulse shadow-md" 
+                              isListening
+                                ? "bg-destructive text-destructive-foreground animate-pulse shadow-md"
                                 : "text-muted-foreground hover:text-foreground hover:bg-muted"
                             )}
                           >
@@ -1042,23 +1297,175 @@ export function InventoryView({
                       </div>
 
                       <div className="space-y-1.5">
-                        <Label htmlFor="mobile-station" className="text-xs font-semibold">
-                          Station
-                        </Label>
-                        <select
-                          id="mobile-station"
-                          value={newItemStation}
-                          onChange={(e) => setNewItemStation(e.target.value as Station)}
-                          className="w-full h-11 rounded-xl border border-border/80 bg-background px-3 text-xs font-mono font-medium text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        >
-                          <option value="GRILL">GRILL (Tawa/Burgers)</option>
-                          <option value="FRY">FRY (Fryers)</option>
-                          <option value="ASSEMBLY">ASSEMBLY (Cold)</option>
-                          <option value="TANDOOR">TANDOOR (Breads)</option>
-                          <option value="DUM_BIRYANI">DUM_BIRYANI</option>
-                          <option value="WOK">WOK (Chinese)</option>
-                          <option value="BEVERAGE">BEVERAGE</option>
-                        </select>
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor="mobile-station" className="text-xs font-semibold">
+                            Station
+                          </Label>
+                          {newItemStation !== 'ASSEMBLY' ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNewItemStation('ASSEMBLY')
+                                setShowMultiStations(false)
+                              }}
+                              className="text-[10px] text-muted-foreground hover:text-foreground hover:underline font-semibold cursor-pointer"
+                            >
+                              Reset
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setShowMultiStations(!showMultiStations)}
+                              className="text-[10px] text-primary hover:underline font-semibold cursor-pointer"
+                            >
+                              {showMultiStations ? 'Hide' : '+ Split Station'}
+                            </button>
+                          )}
+                        </div>
+
+                        <Popover open={isStationPopoverOpen} onOpenChange={setIsStationPopoverOpen}>
+                          <PopoverTrigger asChild>
+                            <Button
+                              id="mobile-station"
+                              type="button"
+                              variant="outline"
+                              role="combobox"
+                              aria-expanded={isStationPopoverOpen}
+                              className="w-full h-11 justify-between text-xs font-normal border-border/80 bg-background hover:bg-muted/40 rounded-xl cursor-pointer"
+                            >
+                              <span className="truncate font-semibold">
+                                {newItemStation === 'ASSEMBLY'
+                                  ? 'Main Kitchen (Default)'
+                                  : customStations.find((c) => c.id === newItemStation)?.label ||
+                                  formatStationName(newItemStation)}
+                              </span>
+                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-[85vw] max-w-xs p-0" align="start">
+                            <Command>
+                              <CommandInput
+                                placeholder="Search or type new station..."
+                                value={stationSearchQuery}
+                                onValueChange={setStationSearchQuery}
+                                className="h-10 text-xs"
+                              />
+                              <CommandList className="max-h-[220px]">
+                                <CommandEmpty className="py-2.5 px-3 text-xs text-muted-foreground">
+                                  {stationSearchQuery.trim() ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const clean = stationSearchQuery.trim()
+                                        const id = clean.toUpperCase().replace(/\s+/g, '_') as Station
+                                        if (!customStations.some((c) => c.id === id)) {
+                                          setCustomStations((prev) => [...prev, { id, label: clean }])
+                                        }
+                                        setNewItemStation(id)
+                                        setStationSearchQuery('')
+                                        setIsStationPopoverOpen(false)
+                                      }}
+                                      className="w-full text-left font-semibold text-primary hover:underline flex items-center gap-1.5 cursor-pointer"
+                                    >
+                                      <Plus className="w-3.5 h-3.5" />
+                                      <span>Create &quot;{stationSearchQuery.trim()}&quot;</span>
+                                    </button>
+                                  ) : (
+                                    'No station found.'
+                                  )}
+                                </CommandEmpty>
+
+                                <CommandGroup heading="Default">
+                                  <CommandItem
+                                    value="Main Kitchen / All-in-One Counter"
+                                    onSelect={() => {
+                                      setNewItemStation('ASSEMBLY')
+                                      setIsStationPopoverOpen(false)
+                                    }}
+                                    className="text-xs cursor-pointer justify-between font-semibold"
+                                  >
+                                    <span> Main Kitchen (Default)</span>
+                                    {newItemStation === 'ASSEMBLY' && <Check className="w-3.5 h-3.5 text-primary" />}
+                                  </CommandItem>
+                                </CommandGroup>
+
+                                {customStations.length > 0 && (
+                                  <CommandGroup heading="Custom Stations">
+                                    {customStations.map((cs) => (
+                                      <CommandItem
+                                        key={cs.id}
+                                        value={cs.label}
+                                        onSelect={() => {
+                                          setNewItemStation(cs.id as Station)
+                                          setIsStationPopoverOpen(false)
+                                        }}
+                                        className="text-xs cursor-pointer justify-between text-primary font-medium"
+                                      >
+                                        <span>⭐ {cs.label}</span>
+                                        {newItemStation === cs.id && <Check className="w-3.5 h-3.5 text-primary" />}
+                                      </CommandItem>
+                                    ))}
+                                  </CommandGroup>
+                                )}
+
+                                {showMultiStations && (
+                                  <CommandGroup heading="Specialized Stations">
+                                    {[
+                                      { id: 'GRILL', label: 'Grill & Tawa' },
+                                      { id: 'FRY', label: 'Fryer' },
+                                      { id: 'BEVERAGE', label: 'Beverages' },
+                                      { id: 'PIZZA', label: 'Pizza & Baking' },
+                                      { id: 'WOK', label: 'Wok' },
+                                      { id: 'TANDOOR', label: 'Tandoor' },
+                                      { id: 'DUM_BIRYANI', label: 'Dum Biryani' },
+                                    ].map((st) => (
+                                      <CommandItem
+                                        key={st.id}
+                                        value={st.label}
+                                        onSelect={() => {
+                                          setNewItemStation(st.id as Station)
+                                          setIsStationPopoverOpen(false)
+                                        }}
+                                        className="text-xs cursor-pointer justify-between"
+                                      >
+                                        <span>{st.label}</span>
+                                        {newItemStation === st.id && <Check className="w-3.5 h-3.5 text-primary" />}
+                                      </CommandItem>
+                                    ))}
+                                  </CommandGroup>
+                                )}
+
+                                {stationSearchQuery.trim() &&
+                                  !['Main Kitchen', ...customStations.map((c) => c.label)].some(
+                                    (l) => l.toLowerCase() === stationSearchQuery.trim().toLowerCase()
+                                  ) && (
+                                    <>
+                                      <CommandSeparator />
+                                      <CommandGroup>
+                                        <CommandItem
+                                          value={`add-${stationSearchQuery.trim()}`}
+                                          onSelect={() => {
+                                            const clean = stationSearchQuery.trim()
+                                            const id = clean.toUpperCase().replace(/\s+/g, '_') as Station
+                                            if (!customStations.some((c) => c.id === id)) {
+                                              setCustomStations((prev) => [...prev, { id, label: clean }])
+                                            }
+                                            setNewItemStation(id)
+                                            setStationSearchQuery('')
+                                            setIsStationPopoverOpen(false)
+                                          }}
+                                          className="text-xs cursor-pointer text-primary font-bold gap-1.5"
+                                        >
+                                          <Plus className="w-3.5 h-3.5" />
+                                          <span>Add new station: &quot;{stationSearchQuery.trim()}&quot;</span>
+                                        </CommandItem>
+                                      </CommandGroup>
+                                    </>
+                                  )}
+                              </CommandList>
+                            </Command>
+                          </PopoverContent>
+                        </Popover>
                       </div>
                     </div>
 
@@ -1261,11 +1668,11 @@ export function InventoryView({
 
         const displayedIngredients = selectedBrandFilter === 'ALL'
           ? ingredients
-          : ingredients.filter((ing) => 
-              ing.brandId === selectedBrandFilter ||
-              brandIngredientIds.has(ing.id) || 
-              displayedMenuItems.some(m => (m.recipe || []).some(r => r.ingredientName.toLowerCase() === ing.name.toLowerCase()))
-            )
+          : ingredients.filter((ing) =>
+            ing.brandId === selectedBrandFilter ||
+            brandIngredientIds.has(ing.id) ||
+            displayedMenuItems.some(m => (m.recipe || []).some(r => r.ingredientName.toLowerCase() === ing.name.toLowerCase()))
+          )
 
         // Filter ledger entries for those ingredients
         const displayedIngredientNames = new Set(displayedIngredients.map((i) => i.name.toLowerCase()))
@@ -1278,719 +1685,823 @@ export function InventoryView({
         return (
           <>
 
-      {/* Tab 1: Raw Ingredients */}
-      {activeTab === 'STOCK' && (() => {
-        // Filter by search query if any
-        const filteredIngredients = displayedIngredients.filter((ing) => {
-          if (!ingredientSearch.trim()) return true
-          const q = ingredientSearch.toLowerCase()
-          const brandName = brands.find(b => b.id === ing.brandId)?.name.toLowerCase() || ''
-          return ing.name.toLowerCase().includes(q) || brandName.includes(q) || ing.unit.toLowerCase().includes(q)
-        })
+            {/* Tab 1: Raw Ingredients */}
+            {activeTab === 'STOCK' && (() => {
+              // Filter by category, stock status, and search query
+              const filteredIngredients = displayedIngredients.filter((ing) => {
+                // Category filter
+                if (selectedCategoryFilter !== 'ALL' && ing.category !== selectedCategoryFilter) {
+                  return false
+                }
+                // Stock status filter
+                if (selectedStockStatusFilter === 'LOW' && (ing.currentStock > ing.minThreshold || ing.currentStock <= 0)) {
+                  return false
+                }
+                if (selectedStockStatusFilter === 'OUT' && ing.currentStock > 0) {
+                  return false
+                }
+                // Text search query
+                if (!ingredientSearch.trim()) return true
+                const q = ingredientSearch.toLowerCase()
+                const brandName = brands.find(b => b.id === ing.brandId)?.name.toLowerCase() || ''
+                const catName = (ing.category || '').toLowerCase().replace(/_/g, ' ')
+                const supplier = (ing.supplierName || '').toLowerCase()
+                return ing.name.toLowerCase().includes(q) || brandName.includes(q) || ing.unit.toLowerCase().includes(q) || catName.includes(q) || supplier.includes(q)
+              })
 
-        const sortedIngredients = [...filteredIngredients].sort((a, b) => {
-          const aUrgency = a.currentStock <= 0 ? 0 : a.currentStock <= a.minThreshold ? 1 : 2
-          const bUrgency = b.currentStock <= 0 ? 0 : b.currentStock <= b.minThreshold ? 1 : 2
-          return aUrgency - bUrgency
-        })
+              const sortedIngredients = [...filteredIngredients].sort((a, b) => {
+                const aUrgency = a.currentStock <= 0 ? 0 : a.currentStock <= a.minThreshold ? 1 : 2
+                const bUrgency = b.currentStock <= 0 ? 0 : b.currentStock <= b.minThreshold ? 1 : 2
+                return aUrgency - bUrgency
+              })
 
-        return (
-          <div className="space-y-3.5">
-            {/* Low Stock Warning Alert Banner (Apple HIG Inset Notification) */}
-            {lowStockItems.length > 0 && (
-              <div className="flex items-center justify-between p-3 px-3.5 rounded-2xl border border-destructive/30 bg-destructive/10 text-foreground text-xs shadow-xs">
-                <div className="flex items-center space-x-2.5">
-                  <span className="w-2 h-2 rounded-full bg-destructive animate-pulse shrink-0" />
-                  <AlertTriangle className="w-4 h-4 shrink-0 text-destructive" />
-                  <span className="font-semibold text-xs">
-                    {lowStockItems.length} {lowStockItems.length === 1 ? 'item is' : 'items are'} depleted or below safety threshold.
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsPurchaseOrderOpen(true)}
-                  className="inline-flex items-center gap-1 h-7 px-2.5 rounded-lg bg-destructive/15 hover:bg-destructive/25 text-destructive text-[11px] font-bold active:scale-[0.98] transition-all cursor-pointer whitespace-nowrap"
-                >
-                  <span>Order Now</span>
-                  <span aria-hidden="true">&rarr;</span>
-                </button>
-              </div>
-            )}
+              return (
+                <div className="space-y-3.5">
+                  {/* Low Stock Warning Alert Banner (Apple HIG Inset Notification) */}
+                  {lowStockItems.length > 0 && (
+                    <div className="flex items-center justify-between p-3 px-3.5 rounded-2xl border border-destructive/30 bg-destructive/10 text-foreground text-xs shadow-xs">
+                      <div className="flex items-center space-x-2.5">
+                        <span className="w-2 h-2 rounded-full bg-destructive animate-pulse shrink-0" />
+                        <AlertTriangle className="w-4 h-4 shrink-0 text-destructive" />
+                        <span className="font-semibold text-xs">
+                          {lowStockItems.length} {lowStockItems.length === 1 ? 'item is' : 'items are'} depleted or below safety threshold.
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsPurchaseOrderOpen(true)}
+                        className="inline-flex items-center gap-1 h-7 px-2.5 rounded-lg bg-destructive/15 hover:bg-destructive/25 text-destructive text-[11px] font-bold active:scale-[0.98] transition-all cursor-pointer whitespace-nowrap"
+                      >
+                        <span>Order Now</span>
+                        <span aria-hidden="true">&rarr;</span>
+                      </button>
+                    </div>
+                  )}
 
-            {/* View Mode Switch & Search Filter Bar (Apple HIG Layout) */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-              {/* Apple HIG iOS Search Field */}
-              <div className="relative flex-1 max-w-md">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/80 pointer-events-none" />
-                <Input
-                  type="text"
-                  placeholder="Search ingredient, brand, or SKU..."
-                  value={ingredientSearch}
-                  onChange={(e) => setIngredientSearch(e.target.value)}
-                  className="h-10 pl-9 pr-9 text-xs sm:text-sm bg-muted/40 hover:bg-muted/60 focus-visible:bg-background rounded-xl border-border/70 transition-all shadow-2xs"
-                />
-                {ingredientSearch && (
-                  <button
-                    type="button"
-                    onClick={() => setIngredientSearch('')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-muted-foreground/20 hover:bg-muted-foreground/30 text-foreground flex items-center justify-center text-xs transition-colors cursor-pointer"
-                    title="Clear search"
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
-
-              {/* View Toggle: Table vs Cards (Apple HIG Segmented Switcher) */}
-              <div className="flex items-center justify-between sm:justify-end gap-2.5">
-                <span className="text-[11px] text-muted-foreground font-mono">
-                  {sortedIngredients.length} {sortedIngredients.length === 1 ? 'item' : 'items'}
-                </span>
-                <div className="flex items-center bg-muted/70 p-1 rounded-xl border border-border/60 shadow-2xs">
-                  <button
-                    type="button"
-                    onClick={() => setStockViewMode('TABLE')}
-                    className={cn(
-                      "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer active:scale-[0.98]",
-                      stockViewMode === 'TABLE'
-                        ? "bg-background text-foreground shadow-xs font-bold"
-                        : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    <LayoutList className={cn("w-3.5 h-3.5", stockViewMode === 'TABLE' ? "text-primary" : "text-muted-foreground")} />
-                    <span>Table</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setStockViewMode('CARDS')}
-                    className={cn(
-                      "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer active:scale-[0.98]",
-                      stockViewMode === 'CARDS'
-                        ? "bg-background text-foreground shadow-xs font-bold"
-                        : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    <LayoutGrid className={cn("w-3.5 h-3.5", stockViewMode === 'CARDS' ? "text-primary" : "text-muted-foreground")} />
-                    <span>Cards</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Mode 1: Clean Minimal Table View */}
-            {stockViewMode === 'TABLE' && (
-              <div className="rounded-2xl border border-border/80 bg-card/90 overflow-hidden shadow-xs">
-                {/* Mobile scroll hint indicator */}
-                <div className="sm:hidden px-3.5 py-1.5 bg-muted/40 border-b border-border/60 flex items-center justify-between text-[10px] text-muted-foreground font-mono">
-                  <span>Swipe horizontally to view full stock columns</span>
-                  <span className="text-primary font-bold">Scroll &rarr;</span>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs min-w-[700px]">
-                    <thead className="bg-muted/50 border-b border-border/80 text-[10px] font-bold text-muted-foreground uppercase tracking-wider font-mono">
-                      <tr>
-                        <th className="py-3 px-4 whitespace-nowrap">Ingredient Name</th>
-                        <th className="py-3 px-3 whitespace-nowrap">Brand</th>
-                        <th className="py-3 px-3 text-right whitespace-nowrap">In Stock</th>
-                        <th className="py-3 px-3 text-right whitespace-nowrap">Min Buffer</th>
-                        <th className="py-3 px-3 text-center whitespace-nowrap">Status</th>
-                        {userRole === 'OWNER' && (
-                          <th className="py-3 px-3 text-right whitespace-nowrap">Unit Cost</th>
+                  {/* View Mode Switch & Search Filter Bar (Apple HIG Layout) */}
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pt-1">
+                    {/* Search Field & Filters Group */}
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1">
+                      {/* Apple HIG iOS Search Field */}
+                      <div className="relative flex-1 max-w-sm">
+                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/80 pointer-events-none" />
+                        <Input
+                          type="text"
+                          placeholder="Search ingredient, category, supplier..."
+                          value={ingredientSearch}
+                          onChange={(e) => setIngredientSearch(e.target.value)}
+                          className="h-10 pl-9 pr-9 text-xs sm:text-sm bg-muted/40 hover:bg-muted/60 focus-visible:bg-background rounded-xl border-border/70 transition-all shadow-2xs"
+                        />
+                        {ingredientSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setIngredientSearch('')}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-muted-foreground/20 hover:bg-muted-foreground/30 text-foreground flex items-center justify-center text-xs transition-colors cursor-pointer"
+                            title="Clear search"
+                          >
+                            ✕
+                          </button>
                         )}
-                        <th className="py-3 px-4 text-right whitespace-nowrap">Quick Stock Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border/60">
-                      {sortedIngredients.length === 0 ? (
-                        <tr>
-                          <td colSpan={userRole === 'OWNER' ? 7 : 6} className="py-12 text-center text-muted-foreground text-xs">
-                            <p className="font-semibold text-foreground">No ingredients found</p>
-                            <p className="text-[11px] text-muted-foreground mt-0.5">Try adjusting your search query or brand filter.</p>
-                          </td>
-                        </tr>
-                      ) : (
-                        sortedIngredients.map((ing) => {
-                          const isZero = ing.currentStock <= 0
-                          const isLow = ing.currentStock <= ing.minThreshold
-                          const brand = brands.find(b => b.id === ing.brandId)
+                      </div>
 
-                          return (
-                            <tr
-                              key={ing.id}
-                              className={cn(
-                                "hover:bg-muted/40 transition-colors",
-                                isZero && "bg-destructive/5 hover:bg-destructive/10",
-                                !isZero && isLow && "bg-amber-500/5 hover:bg-amber-500/10"
+                      {/* Category Filter Select */}
+                      <div className="w-full sm:w-[170px]">
+                        <Select value={selectedCategoryFilter} onValueChange={setSelectedCategoryFilter}>
+                          <SelectTrigger className="h-10 rounded-xl border border-border/70 bg-background text-xs font-semibold">
+                            <SelectValue placeholder="All Categories" />
+                          </SelectTrigger>
+                          <SelectContent className="rounded-xl border border-border/80 bg-popover text-popover-foreground shadow-lg">
+                            <SelectItem value="ALL" className="text-xs font-semibold">All Categories</SelectItem>
+                            <SelectItem value="DRY_STAPLES" className="text-xs">Dry Staples & Spices</SelectItem>
+                            <SelectItem value="PRODUCE_DAIRY" className="text-xs">Dairy & Fresh Produce</SelectItem>
+                            <SelectItem value="MEAT_POULTRY" className="text-xs">Meat & Poultry</SelectItem>
+                            <SelectItem value="PACKAGING" className="text-xs">Packaging & Disposables</SelectItem>
+                            <SelectItem value="BEVERAGES_RETAIL" className="text-xs">Retail Drinks & Cans</SelectItem>
+                            <SelectItem value="CENTRAL_PREP" className="text-xs">Central Base & Prep</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Stock Health Status Filter Select */}
+                      <div className="w-full sm:w-[150px]">
+                        <Select value={selectedStockStatusFilter} onValueChange={(val) => setSelectedStockStatusFilter(val as 'ALL' | 'LOW' | 'OUT')}>
+                          <SelectTrigger className="h-10 rounded-xl border border-border/70 bg-background text-xs font-semibold">
+                            <SelectValue placeholder="All Stock Status" />
+                          </SelectTrigger>
+                          <SelectContent className="rounded-xl border border-border/80 bg-popover text-popover-foreground shadow-lg">
+                            <SelectItem value="ALL" className="text-xs font-semibold">All Stock</SelectItem>
+                            <SelectItem value="LOW" className="text-xs text-amber-600 dark:text-amber-400 font-medium">Low Stock (&lt; Min)</SelectItem>
+                            <SelectItem value="OUT" className="text-xs text-destructive font-medium">Out of Stock (86)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    {/* View Toggle: Table vs Cards (Apple HIG Segmented Switcher) */}
+                    <div className="flex items-center justify-between sm:justify-end gap-2.5">
+                      <span className="text-[11px] text-muted-foreground font-mono">
+                        {sortedIngredients.length} {sortedIngredients.length === 1 ? 'item' : 'items'}
+                      </span>
+                      <div className="flex items-center bg-muted/70 p-1 rounded-xl border border-border/60 shadow-2xs">
+                        <button
+                          type="button"
+                          onClick={() => setStockViewMode('TABLE')}
+                          className={cn(
+                            "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer active:scale-[0.98]",
+                            stockViewMode === 'TABLE'
+                              ? "bg-background text-foreground shadow-xs font-bold"
+                              : "text-muted-foreground hover:text-foreground"
+                          )}
+                        >
+                          <LayoutList className={cn("w-3.5 h-3.5", stockViewMode === 'TABLE' ? "text-primary" : "text-muted-foreground")} />
+                          <span>Table</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setStockViewMode('CARDS')}
+                          className={cn(
+                            "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer active:scale-[0.98]",
+                            stockViewMode === 'CARDS'
+                              ? "bg-background text-foreground shadow-xs font-bold"
+                              : "text-muted-foreground hover:text-foreground"
+                          )}
+                        >
+                          <LayoutGrid className={cn("w-3.5 h-3.5", stockViewMode === 'CARDS' ? "text-primary" : "text-muted-foreground")} />
+                          <span>Cards</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Mode 1: Clean Minimal Table View */}
+                  {stockViewMode === 'TABLE' && (
+                    <div className="rounded-2xl border border-border/80 bg-card/90 overflow-hidden shadow-xs">
+                      {/* Mobile scroll hint indicator */}
+                      <div className="sm:hidden px-3.5 py-1.5 bg-muted/40 border-b border-border/60 flex items-center justify-between text-[10px] text-muted-foreground font-mono">
+                        <span>Swipe horizontally to view full stock columns</span>
+                        <span className="text-primary font-bold">Scroll &rarr;</span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs min-w-[700px]">
+                          <thead className="bg-muted/50 border-b border-border/80 text-[10px] font-bold text-muted-foreground uppercase tracking-wider font-mono">
+                            <tr>
+                              <th className="py-3 px-4 whitespace-nowrap">Ingredient Name</th>
+                              <th className="py-3 px-3 whitespace-nowrap">Brand</th>
+                              <th className="py-3 px-3 whitespace-nowrap">Category</th>
+                              <th className="py-3 px-3 whitespace-nowrap">Location</th>
+                              <th className="py-3 px-3 whitespace-nowrap">Supplier</th>
+                              <th className="py-3 px-3 text-right whitespace-nowrap">In Stock</th>
+                              <th className="py-3 px-3 text-right whitespace-nowrap">Min Buffer</th>
+                              <th className="py-3 px-3 text-center whitespace-nowrap">Status</th>
+                              {userRole === 'OWNER' && (
+                                <th className="py-3 px-3 text-right whitespace-nowrap">Unit Cost</th>
                               )}
-                            >
-                              {/* Name */}
-                              <td className="py-3.5 px-4 font-bold text-foreground whitespace-nowrap">
-                                <span className="text-xs sm:text-sm">{ing.name}</span>
-                              </td>
+                              <th className="py-3 px-4 text-right whitespace-nowrap">Quick Stock Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border/60">
+                            {sortedIngredients.length === 0 ? (
+                              <tr>
+                                <td colSpan={userRole === 'OWNER' ? 10 : 9} className="py-12 text-center text-muted-foreground text-xs">
+                                  <p className="font-semibold text-foreground">No ingredients found</p>
+                                  <p className="text-[11px] text-muted-foreground mt-0.5">Try adjusting your search query or brand filter.</p>
+                                </td>
+                              </tr>
+                            ) : (
+                              sortedIngredients.map((ing) => {
+                                const isZero = ing.currentStock <= 0
+                                const isLow = ing.currentStock <= ing.minThreshold
+                                const brand = brands.find(b => b.id === ing.brandId)
 
-                              {/* Brand */}
-                              <td className="py-3.5 px-3 whitespace-nowrap">
-                                {brand ? (
-                                  <span className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground">
-                                    <span
-                                      className="w-2 h-2 rounded-full shrink-0 shadow-2xs"
-                                      style={{ backgroundColor: brand.color }}
-                                    />
-                                    <span>{brand.name}</span>
-                                  </span>
-                                ) : (
-                                  <span className="text-muted-foreground text-xs">—</span>
-                                )}
-                              </td>
+                                return (
+                                  <tr
+                                    key={ing.id}
+                                    className={cn(
+                                      "hover:bg-muted/40 transition-colors",
+                                      isZero && "bg-destructive/5 hover:bg-destructive/10",
+                                      !isZero && isLow && "bg-amber-500/5 hover:bg-amber-500/10"
+                                    )}
+                                  >
+                                    {/* Name and Storage Location */}
+                                    <td className="py-3 px-4 whitespace-nowrap">
+                                      <div className="space-y-0.5">
+                                        <span className="font-bold text-foreground text-xs sm:text-sm">
+                                          {ing.name}
+                                        </span>
+                                        <p className="text-[11px] text-muted-foreground font-mono">
+                                          {ing.storageZone
+                                            ? ing.storageZone === 'CHILLER'
+                                              ? 'Chiller'
+                                              : ing.storageZone === 'FREEZER'
+                                              ? 'Freezer'
+                                              : ing.storageZone === 'DRY_STORE'
+                                              ? 'Dry Store'
+                                              : ing.storageZone === 'PACKAGING_BAY'
+                                              ? 'Packaging Bay'
+                                              : ing.storageZone === 'STATION_LINE'
+                                              ? 'Station Line'
+                                              : String(ing.storageZone).replace(/_/g, ' ')
+                                            : 'Dry Store'}
+                                        </p>
+                                      </div>
+                                    </td>
 
-                              {/* In Stock */}
-                              <td className="py-3.5 px-3 text-right font-mono font-bold text-xs sm:text-sm whitespace-nowrap">
-                                <span
-                                  className={cn(
-                                    isZero ? "text-destructive font-extrabold" : isLow ? "text-amber-600 dark:text-amber-400 font-bold" : "text-foreground"
-                                  )}
-                                >
-                                  {ing.currentStock}
-                                </span>
-                                <span className="text-[11px] text-muted-foreground font-normal ml-1">
-                                  {ing.unit}
-                                </span>
-                              </td>
+                                    {/* Brand */}
+                                    <td className="py-3.5 px-3 whitespace-nowrap">
+                                      {brand ? (
+                                        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground">
+                                          <span
+                                            className="w-2 h-2 rounded-full shrink-0 shadow-2xs"
+                                            style={{ backgroundColor: brand.color }}
+                                          />
+                                          <span>{brand.name}</span>
+                                        </span>
+                                      ) : (
+                                        <span className="text-muted-foreground text-xs">Shared SKU</span>
+                                      )}
+                                    </td>
 
-                              {/* Min Buffer */}
-                              <td className="py-3.5 px-3 text-right font-mono text-xs text-muted-foreground whitespace-nowrap">
-                                {ing.minThreshold} {ing.unit}
-                              </td>
+                                    {/* Category */}
+                                    <td className="py-3.5 px-3 whitespace-nowrap">
+                                      <Badge variant="outline" className="text-[10px] font-mono border-border/80 bg-muted/40 text-muted-foreground rounded-lg px-2 py-0.5">
+                                        {ing.category ? ing.category.replace(/_/g, ' ') : 'DRY STAPLES'}
+                                      </Badge>
+                                    </td>
 
-                              {/* Status Badge */}
-                              <td className="py-3.5 px-3 text-center whitespace-nowrap">
+                                    {/* Storage Zone / Location */}
+                                    <td className="py-3.5 px-3 whitespace-nowrap text-xs text-muted-foreground font-mono">
+                                      {ing.storageZone ? ing.storageZone.replace(/_/g, ' ') : 'DRY STORE'}
+                                    </td>
+
+                                    {/* Supplier / Vendor */}
+                                    <td className="py-3.5 px-3 whitespace-nowrap text-xs text-foreground font-medium">
+                                      {ing.supplierName || <span className="text-muted-foreground">—</span>}
+                                    </td>
+
+                                    {/* In Stock */}
+                                    <td className="py-3.5 px-3 text-right font-mono font-bold text-xs sm:text-sm whitespace-nowrap">
+                                      <span
+                                        className={cn(
+                                          isZero ? "text-destructive font-extrabold" : isLow ? "text-amber-600 dark:text-amber-400 font-bold" : "text-foreground"
+                                        )}
+                                      >
+                                        {ing.currentStock}
+                                      </span>
+                                      <span className="text-[11px] text-muted-foreground font-normal ml-1">
+                                        {ing.unit}
+                                      </span>
+                                    </td>
+
+                                    {/* Min Buffer */}
+                                    <td className="py-3.5 px-3 text-right font-mono text-xs text-muted-foreground whitespace-nowrap">
+                                      {ing.minThreshold} {ing.unit}
+                                    </td>
+
+                                    {/* Status Badge */}
+                                    <td className="py-3.5 px-3 text-center whitespace-nowrap">
+                                      {isZero ? (
+                                        <Badge className="bg-destructive/15 text-destructive border border-destructive/30 text-[10px] font-mono px-2 py-0.5 rounded-full">
+                                          Out of Stock (86)
+                                        </Badge>
+                                      ) : isLow ? (
+                                        <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 text-[10px] font-mono px-2 py-0.5 rounded-full">
+                                          Low Stock
+                                        </Badge>
+                                      ) : (
+                                        <Badge variant="outline" className="text-emerald-700 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/10 text-[10px] font-mono px-2 py-0.5 rounded-full">
+                                          Normal
+                                        </Badge>
+                                      )}
+                                    </td>
+
+                                    {/* Unit Cost (Owner only with Quick Edit) */}
+                                    {userRole === 'OWNER' && (
+                                      <td className="py-3.5 px-3 text-right whitespace-nowrap">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setEditingCostIng(ing)
+                                            setNewCostInput(ing.costPerUnit.toString())
+                                          }}
+                                          className="inline-flex items-center gap-1 font-mono text-xs text-foreground font-semibold hover:text-primary hover:underline cursor-pointer group"
+                                          title="Click to adjust unit cost"
+                                        >
+                                          <span>{formatCurrency(ing.costPerUnit)}</span>
+                                          <span className="text-[10px] text-muted-foreground">/{ing.unit}</span>
+                                          <Edit2 className="w-3 h-3 text-muted-foreground group-hover:text-primary transition-colors opacity-70 ml-0.5" />
+                                        </button>
+                                      </td>
+                                    )}
+
+                                    {/* Simple Single Action Button */}
+                                    <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                                      <div className="inline-flex items-center gap-1.5">
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => {
+                                            setAdjustingIng(ing)
+                                            setAdjustDelta('-1')
+                                            setAdjustReason('WASTAGE_SPOILAGE')
+                                          }}
+                                          className="h-8 px-3 text-xs font-semibold rounded-xl bg-background hover:bg-muted border-border/80 active:scale-[0.98] transition-all cursor-pointer shadow-2xs"
+                                        >
+                                          <span>Adjust Stock</span>
+                                        </Button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )
+                              })
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Mode 2: Apple HIG Stock Cards View */}
+                  {stockViewMode === 'CARDS' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                      {sortedIngredients.map((ing) => {
+                        const isZero = ing.currentStock <= 0
+                        const isLow = ing.currentStock <= ing.minThreshold
+                        const brand = brands.find(b => b.id === ing.brandId)
+
+                        // Stock health percentage (capped at 100%)
+                        const stockHealth = ing.minThreshold > 0
+                          ? Math.min(100, Math.round((ing.currentStock / (ing.minThreshold * 2)) * 100))
+                          : 100
+
+                        return (
+                          <Card
+                            key={ing.id}
+                            className={cn(
+                              "p-4 rounded-2xl flex flex-col justify-between border transition-all shadow-2xs",
+                              isZero
+                                ? "border-destructive/40 bg-destructive/5"
+                                : isLow
+                                  ? "border-amber-500/40 bg-amber-500/5"
+                                  : "border-border/80 bg-card/90 hover:border-primary/40"
+                            )}
+                          >
+                            <div className="space-y-3">
+                              {/* Header: Title, Brand, and Status Badge */}
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="space-y-1">
+                                  <h4 className="text-sm font-bold text-foreground leading-snug">
+                                    {ing.name}
+                                  </h4>
+                                  <div className="flex items-center gap-2 text-[11px] text-muted-foreground font-mono">
+                                    <span>
+                                      {ing.storageZone
+                                        ? ing.storageZone === 'CHILLER'
+                                          ? 'Chiller'
+                                          : ing.storageZone === 'FREEZER'
+                                          ? 'Freezer'
+                                          : ing.storageZone === 'DRY_STORE'
+                                          ? 'Dry Store'
+                                          : ing.storageZone === 'PACKAGING_BAY'
+                                          ? 'Packaging Bay'
+                                          : ing.storageZone === 'STATION_LINE'
+                                          ? 'Station Line'
+                                          : String(ing.storageZone).replace(/_/g, ' ')
+                                        : 'Dry Store'}
+                                    </span>
+                                    {brand && (
+                                      <>
+                                        <span>&bull;</span>
+                                        <span className="flex items-center gap-1 font-sans font-medium text-foreground">
+                                          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: brand.color }} />
+                                          <span>{brand.name}</span>
+                                        </span>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+
                                 {isZero ? (
-                                  <Badge className="bg-destructive/15 text-destructive border border-destructive/30 text-[10px] font-mono px-2 py-0.5 rounded-full">
-                                    Out of Stock (86)
+                                  <Badge className="bg-destructive/15 text-destructive border border-destructive/30 text-[10px] font-mono px-2 py-0.5 rounded-full shrink-0">
+                                    Out of Stock
                                   </Badge>
                                 ) : isLow ? (
-                                  <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 text-[10px] font-mono px-2 py-0.5 rounded-full">
+                                  <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 text-[10px] font-mono px-2 py-0.5 rounded-full shrink-0">
                                     Low Stock
                                   </Badge>
                                 ) : (
-                                  <Badge variant="outline" className="text-emerald-700 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/10 text-[10px] font-mono px-2 py-0.5 rounded-full">
+                                  <Badge variant="outline" className="text-emerald-700 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/10 text-[10px] font-mono px-2 py-0.5 rounded-full shrink-0">
                                     Normal
                                   </Badge>
                                 )}
-                              </td>
+                              </div>
 
-                              {/* Unit Cost (Owner only with Quick Edit) */}
+                              {/* Stock Level & Visual Health Bar */}
+                              <div className="p-3 rounded-xl bg-muted/40 border border-border/50 space-y-2">
+                                <div className="flex items-baseline justify-between font-mono">
+                                  <span className="text-xs text-muted-foreground font-sans font-medium">Stock Level:</span>
+                                  <div className="text-right">
+                                    <span
+                                      className={cn(
+                                        "text-lg font-extrabold tracking-tight",
+                                        isZero ? "text-destructive" : isLow ? "text-amber-600 dark:text-amber-400" : "text-foreground"
+                                      )}
+                                    >
+                                      {ing.currentStock}
+                                    </span>
+                                    <span className="text-xs text-muted-foreground ml-1">
+                                      {ing.unit}
+                                    </span>
+                                    <span className="text-[11px] text-muted-foreground/70 ml-1.5 font-sans">
+                                      (min {ing.minThreshold})
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Progress Health Meter */}
+                                <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
+                                  <div
+                                    className={cn(
+                                      "h-full rounded-full transition-all duration-300",
+                                      isZero ? "w-0 bg-destructive" : isLow ? "bg-amber-500" : "bg-emerald-500"
+                                    )}
+                                    style={{ width: `${Math.max(4, stockHealth)}%` }}
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Owner Unit Cost Row with 1-Tap Edit Trigger */}
                               {userRole === 'OWNER' && (
-                                <td className="py-3.5 px-3 text-right whitespace-nowrap">
+                                <div className="flex items-center justify-between text-xs px-0.5">
+                                  <span className="text-muted-foreground font-medium">Unit Cost:</span>
                                   <button
                                     type="button"
                                     onClick={() => {
                                       setEditingCostIng(ing)
                                       setNewCostInput(ing.costPerUnit.toString())
                                     }}
-                                    className="inline-flex items-center gap-1 font-mono text-xs text-foreground font-semibold hover:text-primary hover:underline cursor-pointer group"
-                                    title="Click to adjust unit cost"
+                                    className="inline-flex items-center gap-1 font-mono font-semibold text-foreground hover:text-primary transition-colors cursor-pointer group"
+                                    title="Click to update cost"
                                   >
                                     <span>{formatCurrency(ing.costPerUnit)}</span>
-                                    <span className="text-[10px] text-muted-foreground">/{ing.unit}</span>
+                                    <span className="text-[10px] text-muted-foreground font-normal">/{ing.unit}</span>
                                     <Edit2 className="w-3 h-3 text-muted-foreground group-hover:text-primary transition-colors opacity-70 ml-0.5" />
                                   </button>
-                                </td>
-                              )}
-
-                              {/* Simple Single Action Button */}
-                              <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                                <div className="inline-flex items-center gap-1.5">
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => {
-                                      setAdjustingIng(ing)
-                                      setAdjustDelta('-1')
-                                      setAdjustReason('WASTAGE_SPOILAGE')
-                                    }}
-                                    className="h-8 px-3 text-xs font-semibold rounded-xl bg-background hover:bg-muted border-border/80 active:scale-[0.98] transition-all cursor-pointer shadow-2xs"
-                                  >
-                                    <span>Adjust Stock</span>
-                                  </Button>
                                 </div>
-                              </td>
-                            </tr>
-                          )
-                        })
-                      )}
-                    </tbody>
-                  </table>
+                              )}
+                            </div>
+
+                            {/* Action Bar: Quick Stepper Buttons + Adjust Stock */}
+                            <div className="pt-3 border-t border-border/60 mt-3 flex items-center gap-2">
+                              {/* Quick 1-tap decrement (-1 or -100) */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const delta = ing.unit === 'pc' ? -1 : -100
+                                  onAdjustStockWithReason(ing.id, delta, 'WASTAGE_SPOILAGE', 'Quick decrement')
+                                }}
+                                className="h-9 px-2.5 rounded-xl border border-border/80 bg-background/80 hover:bg-muted text-xs font-mono font-bold text-destructive active:scale-[0.96] transition-all cursor-pointer shadow-2xs"
+                                title={`Quick -${ing.unit === 'pc' ? '1' : '100'} ${ing.unit}`}
+                              >
+                                -{ing.unit === 'pc' ? '1' : '100'}
+                              </button>
+
+                              {/* Quick 1-tap increment (+1 or +100) */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const delta = ing.unit === 'pc' ? 1 : 100
+                                  onAdjustStockWithReason(ing.id, delta, 'PURCHASE_INFLOW', 'Quick restock')
+                                }}
+                                className="h-9 px-2.5 rounded-xl border border-border/80 bg-background/80 hover:bg-muted text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400 active:scale-[0.96] transition-all cursor-pointer shadow-2xs"
+                                title={`Quick +${ing.unit === 'pc' ? '1' : '100'} ${ing.unit}`}
+                              >
+                                +{ing.unit === 'pc' ? '1' : '100'}
+                              </button>
+
+                              {/* Detailed Adjust Modal Trigger */}
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setAdjustingIng(ing)
+                                  setAdjustDelta('-1')
+                                  setAdjustReason('WASTAGE_SPOILAGE')
+                                }}
+                                className="flex-1 h-9 rounded-xl text-xs font-semibold bg-background hover:bg-muted border-border/80 active:scale-[0.98] transition-all cursor-pointer shadow-2xs"
+                              >
+                                Adjust
+                              </Button>
+                            </div>
+                          </Card>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+
+            {/* Tab 2: Menu Items & Per-Platform Swiggy / Zomato Controls */}
+            {activeTab === 'MENU' && (
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <span className="text-xs font-semibold text-foreground uppercase tracking-wider block">
+                      Independent Aggregator Menu Status (Swiggy & Zomato)
+                    </span>
+                    <span className="text-xs text-muted-foreground font-mono">
+                      Auto-86: Triggers if stock &lt; 1 portion BOM or &lt; min threshold
+                    </span>
+                  </div>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setIsMenuItemDialogOpen(true)
+                      setNewItemName('Corn Cheese Grilled Sandwich')
+                      handleGenerateAIBOM('Corn Cheese Grilled Sandwich')
+                    }}
+                    className="text-xs h-9 px-3.5 rounded-xl gap-1.5 font-bold border-primary/30 bg-primary/10 text-primary hover:bg-primary/15 shadow-2xs self-start sm:self-auto cursor-pointer active:scale-[0.98] transition-all"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                    <span>✨ AI Smart Recipe Wizard</span>
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                  {displayedMenuItems.map((item) => {
+                    const brand = brands.find((b) => b.id === item.brandId)
+
+                    return (
+                      <Card
+                        key={item.id}
+                        className={cn(
+                          "p-4 rounded-2xl flex flex-col justify-between shadow-2xs border transition-all",
+                          !item.isAvailable ? "opacity-60 bg-muted/30 border-dashed" : "border-border/80 bg-card/90"
+                        )}
+                      >
+                        <div className="space-y-2.5">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: brand?.color }} />
+                                  <span>{brand?.name}</span>
+                                </span>
+                                <span className="text-[10px] font-mono text-muted-foreground uppercase">
+                                  Station: {formatStationName(item.station)}
+                                </span>
+                              </div>
+                              <h4 className="text-sm font-bold text-foreground leading-tight mt-1">
+                                {item.name}
+                              </h4>
+                              <p className="text-[11px] text-muted-foreground line-clamp-1 mt-0.5">
+                                {item.description}
+                              </p>
+                            </div>
+
+                            <div className="text-right shrink-0">
+                              {userRole === 'OWNER' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingPriceDish(item)
+                                    setNewSellingPriceInput(item.sellingPrice.toString())
+                                    setNewPkgCostInput(item.packagingCost.toString())
+                                  }}
+                                  className="text-right group cursor-pointer block hover:opacity-80"
+                                  title="Click to edit selling price & packaging fee"
+                                >
+                                  <div className="flex items-center justify-end gap-1">
+                                    <span className="text-sm font-bold text-foreground font-mono group-hover:text-primary transition-colors">
+                                      {formatCurrency(item.sellingPrice)}
+                                    </span>
+                                    <Edit2 className="w-3 h-3 text-muted-foreground group-hover:text-primary transition-colors opacity-70" />
+                                  </div>
+                                  <p className="text-[10px] text-muted-foreground font-mono">
+                                    Pkg: {formatCurrency(item.packagingCost)}
+                                  </p>
+                                </button>
+                              ) : (
+                                <>
+                                  <span className="text-sm font-bold text-foreground font-mono">
+                                    {formatCurrency(item.sellingPrice)}
+                                  </span>
+                                  <p className="text-[10px] text-muted-foreground font-mono">
+                                    Pkg: {formatCurrency(item.packagingCost)}
+                                  </p>
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Recipe Ingredients */}
+                          <div className="bg-muted/40 p-2.5 rounded-xl border border-border/40 text-[11px] space-y-1">
+                            <span className="text-[9px] font-semibold text-muted-foreground uppercase block font-mono">
+                              Recipe BOM Ingredients:
+                            </span>
+                            <div className="flex flex-wrap gap-1">
+                              {item.recipe.length === 0 ? (
+                                <span className="text-muted-foreground italic text-[10px]">No linked ingredients</span>
+                              ) : (
+                                item.recipe.map((r) => (
+                                  <Badge
+                                    key={r.ingredientId}
+                                    variant="outline"
+                                    className="text-[9px] px-1.5 py-0.5 font-normal font-mono rounded-md"
+                                  >
+                                    {r.ingredientName} ({r.quantity}{r.unit})
+                                  </Badge>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Independent Swiggy & Zomato Status Buttons with Last Sync */}
+                        <div className="pt-3 border-t border-border/60 space-y-2 mt-2">
+                          <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono">
+                            <span>Platform Status:</span>
+                            <span>Synced: ~3m ago</span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            {/* Swiggy Button */}
+                            <button
+                              type="button"
+                              onClick={() => onTogglePlatformStatus(item.id, 'SWIGGY')}
+                              className={cn(
+                                "h-9 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-between transition-all cursor-pointer border active:scale-[0.98]",
+                                item.swiggyOnline
+                                  ? "bg-orange-500/10 border-orange-500/30 text-orange-700 dark:text-orange-400 font-bold"
+                                  : "bg-muted/40 border-border/60 text-muted-foreground"
+                              )}
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <span className={cn("w-2 h-2 rounded-full", item.swiggyOnline ? "bg-orange-500" : "bg-muted-foreground/40")} />
+                                <span>Swiggy</span>
+                              </div>
+                              <span className="text-[10px] font-mono uppercase tracking-wider">
+                                {item.swiggyOnline ? "ON" : "OFF"}
+                              </span>
+                            </button>
+
+                            {/* Zomato Button */}
+                            <button
+                              type="button"
+                              onClick={() => onTogglePlatformStatus(item.id, 'ZOMATO')}
+                              className={cn(
+                                "h-9 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-between transition-all cursor-pointer border active:scale-[0.98]",
+                                item.zomatoOnline
+                                  ? "bg-red-500/10 border-red-500/30 text-red-700 dark:text-red-400 font-bold"
+                                  : "bg-muted/40 border-border/60 text-muted-foreground"
+                              )}
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <span className={cn("w-2 h-2 rounded-full", item.zomatoOnline ? "bg-red-500" : "bg-muted-foreground/40")} />
+                                <span>Zomato</span>
+                              </div>
+                              <span className="text-[10px] font-mono uppercase tracking-wider">
+                                {item.zomatoOnline ? "ON" : "OFF"}
+                              </span>
+                            </button>
+                          </div>
+                        </div>
+                      </Card>
+                    )
+                  })}
                 </div>
               </div>
             )}
 
-            {/* Mode 2: Apple HIG Stock Cards View */}
-            {stockViewMode === 'CARDS' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                {sortedIngredients.map((ing) => {
-                  const isZero = ing.currentStock <= 0
-                  const isLow = ing.currentStock <= ing.minThreshold
-                  const brand = brands.find(b => b.id === ing.brandId)
-
-                  // Stock health percentage (capped at 100%)
-                  const stockHealth = ing.minThreshold > 0
-                    ? Math.min(100, Math.round((ing.currentStock / (ing.minThreshold * 2)) * 100))
-                    : 100
-
-                  return (
-                    <Card
-                      key={ing.id}
-                      className={cn(
-                        "p-4 rounded-2xl flex flex-col justify-between border transition-all shadow-2xs",
-                        isZero
-                          ? "border-destructive/40 bg-destructive/5"
-                          : isLow
-                          ? "border-amber-500/40 bg-amber-500/5"
-                          : "border-border/80 bg-card/90 hover:border-primary/40"
-                      )}
+            {/* Tab 3: Stock Audit Ledger (Apple HIG Inset Table) */}
+            {activeTab === 'LEDGER' && (
+              <Card className="p-4 sm:p-5 rounded-2xl border-border/80 bg-card/90 backdrop-blur-md shadow-xs space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/70 pb-3">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-primary shrink-0" />
+                      <h3 className="text-sm sm:text-base font-bold tracking-tight text-foreground">
+                        Stock Ledger & Variance Audit Trail
+                      </h3>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Deductions, recipe prep consumption, spoilage, and supplier purchase history
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 self-start sm:self-auto">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        if (stockLedger.length === 0) return
+                        const headers = ['Timestamp', 'Ingredient', 'Reason Code', 'Previous Stock', 'Change Delta', 'New Stock', 'Unit', 'Audit Note']
+                        const rows = stockLedger.map((e) => [
+                          `"${new Date(e.timestamp).toLocaleString('en-IN')}"`,
+                          `"${e.ingredientName.replace(/"/g, '""')}"`,
+                          `"${e.reason}"`,
+                          e.previousStock,
+                          e.delta,
+                          e.newStock,
+                          `"${e.unit}"`,
+                          `"${(e.note || '').replace(/"/g, '""')}"`
+                        ])
+                        const csv = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
+                        const link = document.createElement('a')
+                        link.setAttribute('href', encodeURI(csv))
+                        link.setAttribute('download', `KitchFlow_Stock_Ledger_${new Date().toISOString().slice(0, 10)}.csv`)
+                        document.body.appendChild(link)
+                        link.click()
+                        document.body.removeChild(link)
+                      }}
+                      className="h-9 px-3 text-xs font-semibold rounded-xl gap-1.5 border-border/80 bg-background/80 hover:bg-muted active:scale-[0.98] transition-all cursor-pointer shadow-2xs"
                     >
-                      <div className="space-y-3">
-                        {/* Header: Title, Brand, and Status Badge */}
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="space-y-0.5">
-                            <h4 className="text-sm font-bold text-foreground leading-snug">
-                              {ing.name}
-                            </h4>
-                            {brand ? (
-                              <p className="text-[11px] text-muted-foreground flex items-center gap-1.5 font-medium">
-                                <span className="w-2 h-2 rounded-full shrink-0 shadow-2xs" style={{ backgroundColor: brand.color }} />
-                                <span>{brand.name}</span>
-                              </p>
-                            ) : (
-                              <p className="text-[11px] text-muted-foreground font-mono">
-                                Shared SKU
-                              </p>
-                            )}
-                          </div>
-
-                          {isZero ? (
-                            <Badge className="bg-destructive/15 text-destructive border border-destructive/30 text-[10px] font-mono px-2 py-0.5 rounded-full shrink-0">
-                              Out of Stock
-                            </Badge>
-                          ) : isLow ? (
-                            <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 text-[10px] font-mono px-2 py-0.5 rounded-full shrink-0">
-                              Low Stock
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-emerald-700 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/10 text-[10px] font-mono px-2 py-0.5 rounded-full shrink-0">
-                              Normal
-                            </Badge>
-                          )}
-                        </div>
-
-                        {/* Stock Level & Visual Health Bar */}
-                        <div className="p-3 rounded-xl bg-muted/40 border border-border/50 space-y-2">
-                          <div className="flex items-baseline justify-between font-mono">
-                            <span className="text-xs text-muted-foreground font-sans font-medium">Stock Level:</span>
-                            <div className="text-right">
-                              <span
-                                className={cn(
-                                  "text-lg font-extrabold tracking-tight",
-                                  isZero ? "text-destructive" : isLow ? "text-amber-600 dark:text-amber-400" : "text-foreground"
-                                )}
-                              >
-                                {ing.currentStock}
-                              </span>
-                              <span className="text-xs text-muted-foreground ml-1">
-                                {ing.unit}
-                              </span>
-                              <span className="text-[11px] text-muted-foreground/70 ml-1.5 font-sans">
-                                (min {ing.minThreshold})
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Progress Health Meter */}
-                          <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
-                            <div
-                              className={cn(
-                                "h-full rounded-full transition-all duration-300",
-                                isZero ? "w-0 bg-destructive" : isLow ? "bg-amber-500" : "bg-emerald-500"
-                              )}
-                              style={{ width: `${Math.max(4, stockHealth)}%` }}
-                            />
-                          </div>
-                        </div>
-
-                        {/* Owner Unit Cost Row with 1-Tap Edit Trigger */}
-                        {userRole === 'OWNER' && (
-                          <div className="flex items-center justify-between text-xs px-0.5">
-                            <span className="text-muted-foreground font-medium">Unit Cost:</span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingCostIng(ing)
-                                setNewCostInput(ing.costPerUnit.toString())
-                              }}
-                              className="inline-flex items-center gap-1 font-mono font-semibold text-foreground hover:text-primary transition-colors cursor-pointer group"
-                              title="Click to update cost"
-                            >
-                              <span>{formatCurrency(ing.costPerUnit)}</span>
-                              <span className="text-[10px] text-muted-foreground font-normal">/{ing.unit}</span>
-                              <Edit2 className="w-3 h-3 text-muted-foreground group-hover:text-primary transition-colors opacity-70 ml-0.5" />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Action Bar: Quick Stepper Buttons + Adjust Stock */}
-                      <div className="pt-3 border-t border-border/60 mt-3 flex items-center gap-2">
-                        {/* Quick 1-tap decrement (-1 or -100) */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const delta = ing.unit === 'pc' ? -1 : -100
-                            onAdjustStockWithReason(ing.id, delta, 'WASTAGE_SPOILAGE', 'Quick decrement')
-                          }}
-                          className="h-9 px-2.5 rounded-xl border border-border/80 bg-background/80 hover:bg-muted text-xs font-mono font-bold text-destructive active:scale-[0.96] transition-all cursor-pointer shadow-2xs"
-                          title={`Quick -${ing.unit === 'pc' ? '1' : '100'} ${ing.unit}`}
-                        >
-                          -{ing.unit === 'pc' ? '1' : '100'}
-                        </button>
-
-                        {/* Quick 1-tap increment (+1 or +100) */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const delta = ing.unit === 'pc' ? 1 : 100
-                            onAdjustStockWithReason(ing.id, delta, 'PURCHASE_INFLOW', 'Quick restock')
-                          }}
-                          className="h-9 px-2.5 rounded-xl border border-border/80 bg-background/80 hover:bg-muted text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400 active:scale-[0.96] transition-all cursor-pointer shadow-2xs"
-                          title={`Quick +${ing.unit === 'pc' ? '1' : '100'} ${ing.unit}`}
-                        >
-                          +{ing.unit === 'pc' ? '1' : '100'}
-                        </button>
-
-                        {/* Detailed Adjust Modal Trigger */}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setAdjustingIng(ing)
-                            setAdjustDelta('-1')
-                            setAdjustReason('WASTAGE_SPOILAGE')
-                          }}
-                          className="flex-1 h-9 rounded-xl text-xs font-semibold bg-background hover:bg-muted border-border/80 active:scale-[0.98] transition-all cursor-pointer shadow-2xs"
-                        >
-                          Adjust
-                        </Button>
-                      </div>
-                    </Card>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        )
-      })()}
-
-      {/* Tab 2: Menu Items & Per-Platform Swiggy / Zomato Controls */}
-      {activeTab === 'MENU' && (
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div>
-              <span className="text-xs font-semibold text-foreground uppercase tracking-wider block">
-                Independent Aggregator Menu Status (Swiggy & Zomato)
-              </span>
-              <span className="text-xs text-muted-foreground font-mono">
-                Auto-86: Triggers if stock &lt; 1 portion BOM or &lt; min threshold
-              </span>
-            </div>
-
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                setIsMenuItemDialogOpen(true)
-                setNewItemName('Corn Cheese Grilled Sandwich')
-                handleGenerateAIBOM('Corn Cheese Grilled Sandwich')
-              }}
-              className="text-xs h-9 px-3.5 rounded-xl gap-1.5 font-bold border-primary/30 bg-primary/10 text-primary hover:bg-primary/15 shadow-2xs self-start sm:self-auto cursor-pointer active:scale-[0.98] transition-all"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-              <span>✨ AI Smart Recipe Wizard</span>
-            </Button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-            {displayedMenuItems.map((item) => {
-              const brand = brands.find((b) => b.id === item.brandId)
-
-              return (
-                <Card
-                  key={item.id}
-                  className={cn(
-                    "p-4 rounded-2xl flex flex-col justify-between shadow-2xs border transition-all",
-                    !item.isAvailable ? "opacity-60 bg-muted/30 border-dashed" : "border-border/80 bg-card/90"
-                  )}
-                >
-                  <div className="space-y-2.5">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: brand?.color }} />
-                            <span>{brand?.name}</span>
-                          </span>
-                          <span className="text-[10px] font-mono text-muted-foreground uppercase">
-                            Station: {item.station}
-                          </span>
-                        </div>
-                        <h4 className="text-sm font-bold text-foreground leading-tight mt-1">
-                          {item.name}
-                        </h4>
-                        <p className="text-[11px] text-muted-foreground line-clamp-1 mt-0.5">
-                          {item.description}
-                        </p>
-                      </div>
-
-                      <div className="text-right shrink-0">
-                        {userRole === 'OWNER' ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingPriceDish(item)
-                              setNewSellingPriceInput(item.sellingPrice.toString())
-                              setNewPkgCostInput(item.packagingCost.toString())
-                            }}
-                            className="text-right group cursor-pointer block hover:opacity-80"
-                            title="Click to edit selling price & packaging fee"
-                          >
-                            <div className="flex items-center justify-end gap-1">
-                              <span className="text-sm font-bold text-foreground font-mono group-hover:text-primary transition-colors">
-                                {formatCurrency(item.sellingPrice)}
-                              </span>
-                              <Edit2 className="w-3 h-3 text-muted-foreground group-hover:text-primary transition-colors opacity-70" />
-                            </div>
-                            <p className="text-[10px] text-muted-foreground font-mono">
-                              Pkg: {formatCurrency(item.packagingCost)}
-                            </p>
-                          </button>
-                        ) : (
-                          <>
-                            <span className="text-sm font-bold text-foreground font-mono">
-                              {formatCurrency(item.sellingPrice)}
-                            </span>
-                            <p className="text-[10px] text-muted-foreground font-mono">
-                              Pkg: {formatCurrency(item.packagingCost)}
-                            </p>
-                          </>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Recipe Ingredients */}
-                    <div className="bg-muted/40 p-2.5 rounded-xl border border-border/40 text-[11px] space-y-1">
-                      <span className="text-[9px] font-semibold text-muted-foreground uppercase block font-mono">
-                        Recipe BOM Ingredients:
-                      </span>
-                      <div className="flex flex-wrap gap-1">
-                        {item.recipe.length === 0 ? (
-                          <span className="text-muted-foreground italic text-[10px]">No linked ingredients</span>
-                        ) : (
-                          item.recipe.map((r) => (
-                            <Badge
-                              key={r.ingredientId}
-                              variant="outline"
-                              className="text-[9px] px-1.5 py-0.5 font-normal font-mono rounded-md"
-                            >
-                              {r.ingredientName} ({r.quantity}{r.unit})
-                            </Badge>
-                          ))
-                        )}
-                      </div>
-                    </div>
+                      <Download className="w-3.5 h-3.5 text-muted-foreground" />
+                      <span>Export CSV</span>
+                    </Button>
+                    <Badge variant="outline" className="font-mono text-[11px] h-9 px-2.5 rounded-xl border-border/80 bg-muted/40">
+                      {stockLedger.length} Events
+                    </Badge>
                   </div>
+                </div>
 
-                  {/* Independent Swiggy & Zomato Status Buttons with Last Sync */}
-                  <div className="pt-3 border-t border-border/60 space-y-2 mt-2">
-                    <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono">
-                      <span>Platform Status:</span>
-                      <span>Synced: ~3m ago</span>
-                    </div>
+                {/* Mobile Swipe Guidance Banner */}
+                <div className="sm:hidden px-3.5 py-1.5 rounded-xl bg-muted/40 border border-border/60 flex items-center justify-between text-[10px] text-muted-foreground font-mono">
+                  <span>Swipe horizontally to view full audit columns</span>
+                  <span className="text-primary font-bold">Scroll &rarr;</span>
+                </div>
 
-                    <div className="grid grid-cols-2 gap-2">
-                      {/* Swiggy Button */}
-                      <button
-                        type="button"
-                        onClick={() => onTogglePlatformStatus(item.id, 'SWIGGY')}
-                        className={cn(
-                          "h-9 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-between transition-all cursor-pointer border active:scale-[0.98]",
-                          item.swiggyOnline
-                            ? "bg-orange-500/10 border-orange-500/30 text-orange-700 dark:text-orange-400 font-bold"
-                            : "bg-muted/40 border-border/60 text-muted-foreground"
-                        )}
-                      >
-                        <div className="flex items-center gap-1.5">
-                          <span className={cn("w-2 h-2 rounded-full", item.swiggyOnline ? "bg-orange-500" : "bg-muted-foreground/40")} />
-                          <span>Swiggy</span>
-                        </div>
-                        <span className="text-[10px] font-mono uppercase tracking-wider">
-                          {item.swiggyOnline ? "ON" : "OFF"}
-                        </span>
-                      </button>
-
-                      {/* Zomato Button */}
-                      <button
-                        type="button"
-                        onClick={() => onTogglePlatformStatus(item.id, 'ZOMATO')}
-                        className={cn(
-                          "h-9 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-between transition-all cursor-pointer border active:scale-[0.98]",
-                          item.zomatoOnline
-                            ? "bg-red-500/10 border-red-500/30 text-red-700 dark:text-red-400 font-bold"
-                            : "bg-muted/40 border-border/60 text-muted-foreground"
-                        )}
-                      >
-                        <div className="flex items-center gap-1.5">
-                          <span className={cn("w-2 h-2 rounded-full", item.zomatoOnline ? "bg-red-500" : "bg-muted-foreground/40")} />
-                          <span>Zomato</span>
-                        </div>
-                        <span className="text-[10px] font-mono uppercase tracking-wider">
-                          {item.zomatoOnline ? "ON" : "OFF"}
-                        </span>
-                      </button>
-                    </div>
-                  </div>
-                </Card>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Tab 3: Stock Audit Ledger (Apple HIG Inset Table) */}
-      {activeTab === 'LEDGER' && (
-        <Card className="p-4 sm:p-5 rounded-2xl border-border/80 bg-card/90 backdrop-blur-md shadow-xs space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/70 pb-3">
-            <div className="space-y-0.5">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-primary shrink-0" />
-                <h3 className="text-sm sm:text-base font-bold tracking-tight text-foreground">
-                  Stock Ledger & Variance Audit Trail
-                </h3>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Deductions, recipe prep consumption, spoilage, and supplier purchase history
-              </p>
-            </div>
-            <div className="flex items-center gap-2 self-start sm:self-auto">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  if (stockLedger.length === 0) return
-                  const headers = ['Timestamp', 'Ingredient', 'Reason Code', 'Previous Stock', 'Change Delta', 'New Stock', 'Unit', 'Audit Note']
-                  const rows = stockLedger.map((e) => [
-                    `"${new Date(e.timestamp).toLocaleString('en-IN')}"`,
-                    `"${e.ingredientName.replace(/"/g, '""')}"`,
-                    `"${e.reason}"`,
-                    e.previousStock,
-                    e.delta,
-                    e.newStock,
-                    `"${e.unit}"`,
-                    `"${(e.note || '').replace(/"/g, '""')}"`
-                  ])
-                  const csv = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
-                  const link = document.createElement('a')
-                  link.setAttribute('href', encodeURI(csv))
-                  link.setAttribute('download', `KitchFlow_Stock_Ledger_${new Date().toISOString().slice(0, 10)}.csv`)
-                  document.body.appendChild(link)
-                  link.click()
-                  document.body.removeChild(link)
-                }}
-                className="h-9 px-3 text-xs font-semibold rounded-xl gap-1.5 border-border/80 bg-background/80 hover:bg-muted active:scale-[0.98] transition-all cursor-pointer shadow-2xs"
-              >
-                <Download className="w-3.5 h-3.5 text-muted-foreground" />
-                <span>Export CSV</span>
-              </Button>
-              <Badge variant="outline" className="font-mono text-[11px] h-9 px-2.5 rounded-xl border-border/80 bg-muted/40">
-                {stockLedger.length} Events
-              </Badge>
-            </div>
-          </div>
-
-          {/* Mobile Swipe Guidance Banner */}
-          <div className="sm:hidden px-3.5 py-1.5 rounded-xl bg-muted/40 border border-border/60 flex items-center justify-between text-[10px] text-muted-foreground font-mono">
-            <span>Swipe horizontally to view full audit columns</span>
-            <span className="text-primary font-bold">Scroll &rarr;</span>
-          </div>
-
-          {/* Responsive Table Wrapper */}
-          <div className="overflow-x-auto rounded-xl border border-border/70 bg-background/50">
-            <div className="inline-block min-w-full align-middle">
-              <table className="min-w-[640px] w-full text-left text-xs divide-y divide-border/60">
-                <thead className="bg-muted/50 text-[10px] font-bold text-muted-foreground uppercase tracking-wider font-mono">
-                  <tr>
-                    <th scope="col" className="py-3 px-3.5 w-[100px]">Time</th>
-                    <th scope="col" className="py-3 px-3.5 w-[160px]">Ingredient</th>
-                    <th scope="col" className="py-3 px-3.5 w-[160px]">Reason Code</th>
-                    <th scope="col" className="py-3 px-3 text-right w-[100px]">Change</th>
-                    <th scope="col" className="py-3 px-3.5 text-right w-[100px]">Stock</th>
-                    <th scope="col" className="py-3 px-3.5">Audit Note</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/50 font-mono">
-                  {stockLedger.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="py-12 text-center text-muted-foreground text-xs font-sans">
-                        <p className="font-semibold text-foreground">No ledger events recorded yet</p>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">Adjust stock or fulfill purchase orders to create audit entries.</p>
-                      </td>
-                    </tr>
-                  ) : (
-                    stockLedger.map((entry, idx) => {
-                      const isDeduction = entry.delta < 0
-                      const isPurchase = entry.reason === 'PURCHASE_INFLOW'
-
-                      return (
-                        <tr key={entry.id ? `${entry.id}-${idx}` : `ledger-${idx}`} className="hover:bg-muted/30 transition-colors">
-                          <td className="py-3 px-3.5 text-muted-foreground text-[11px] whitespace-nowrap">
-                            {new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </td>
-                          <td className="py-3 px-3.5 font-bold text-foreground text-xs whitespace-nowrap">
-                            {entry.ingredientName}
-                          </td>
-                          <td className="py-3 px-3.5 whitespace-nowrap">
-                            <Badge
-                              className={cn(
-                                "text-[10px] font-medium font-sans uppercase px-2 py-0.5 rounded-full border whitespace-nowrap",
-                                entry.reason === 'WASTAGE_SPOILAGE'
-                                  ? "bg-destructive/15 text-destructive border-destructive/30"
-                                  : isPurchase
-                                  ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30"
-                                  : "bg-muted text-muted-foreground border-border/80"
-                              )}
-                            >
-                              {entry.reason.replace(/_/g, ' ')}
-                            </Badge>
-                          </td>
-                          <td className="py-3 px-3 text-right font-bold whitespace-nowrap">
-                            <span className={isDeduction ? "text-destructive" : "text-emerald-600 dark:text-emerald-400"}>
-                              {entry.delta > 0 ? `+${entry.delta}` : entry.delta} {entry.unit}
-                            </span>
-                          </td>
-                          <td className="py-3 px-3.5 text-right text-foreground font-bold whitespace-nowrap">
-                            {entry.newStock} {entry.unit}
-                          </td>
-                          <td className="py-3 px-3.5 text-muted-foreground font-sans text-xs min-w-[140px]">
-                            {entry.note || 'Manual line adjustment'}
-                          </td>
+                {/* Responsive Table Wrapper */}
+                <div className="overflow-x-auto rounded-xl border border-border/70 bg-background/50">
+                  <div className="inline-block min-w-full align-middle">
+                    <table className="min-w-[640px] w-full text-left text-xs divide-y divide-border/60">
+                      <thead className="bg-muted/50 text-[10px] font-bold text-muted-foreground uppercase tracking-wider font-mono">
+                        <tr>
+                          <th scope="col" className="py-3 px-3.5 w-[100px]">Time</th>
+                          <th scope="col" className="py-3 px-3.5 w-[160px]">Ingredient</th>
+                          <th scope="col" className="py-3 px-3.5 w-[160px]">Reason Code</th>
+                          <th scope="col" className="py-3 px-3 text-right w-[100px]">Change</th>
+                          <th scope="col" className="py-3 px-3.5 text-right w-[100px]">Stock</th>
+                          <th scope="col" className="py-3 px-3.5">Audit Note</th>
                         </tr>
-                      )
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </Card>
-      )}
+                      </thead>
+                      <tbody className="divide-y divide-border/50 font-mono">
+                        {stockLedger.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="py-12 text-center text-muted-foreground text-xs font-sans">
+                              <p className="font-semibold text-foreground">No ledger events recorded yet</p>
+                              <p className="text-[11px] text-muted-foreground mt-0.5">Adjust stock or fulfill purchase orders to create audit entries.</p>
+                            </td>
+                          </tr>
+                        ) : (
+                          stockLedger.map((entry, idx) => {
+                            const isDeduction = entry.delta < 0
+                            const isPurchase = entry.reason === 'PURCHASE_INFLOW'
+
+                            return (
+                              <tr key={entry.id ? `${entry.id}-${idx}` : `ledger-${idx}`} className="hover:bg-muted/30 transition-colors">
+                                <td className="py-3 px-3.5 text-muted-foreground text-[11px] whitespace-nowrap">
+                                  {new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </td>
+                                <td className="py-3 px-3.5 font-bold text-foreground text-xs whitespace-nowrap">
+                                  {entry.ingredientName}
+                                </td>
+                                <td className="py-3 px-3.5 whitespace-nowrap">
+                                  <Badge
+                                    className={cn(
+                                      "text-[10px] font-medium font-sans uppercase px-2 py-0.5 rounded-full border whitespace-nowrap",
+                                      entry.reason === 'WASTAGE_SPOILAGE'
+                                        ? "bg-destructive/15 text-destructive border-destructive/30"
+                                        : isPurchase
+                                          ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30"
+                                          : "bg-muted text-muted-foreground border-border/80"
+                                    )}
+                                  >
+                                    {entry.reason.replace(/_/g, ' ')}
+                                  </Badge>
+                                </td>
+                                <td className="py-3 px-3 text-right font-bold whitespace-nowrap">
+                                  <span className={isDeduction ? "text-destructive" : "text-emerald-600 dark:text-emerald-400"}>
+                                    {entry.delta > 0 ? `+${entry.delta}` : entry.delta} {entry.unit}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-3.5 text-right text-foreground font-bold whitespace-nowrap">
+                                  {entry.newStock} {entry.unit}
+                                </td>
+                                <td className="py-3 px-3.5 text-muted-foreground font-sans text-xs min-w-[140px]">
+                                  {entry.note || 'Manual line adjustment'}
+                                </td>
+                              </tr>
+                            )
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </Card>
+            )}
           </>
         )
       })()}
@@ -2140,6 +2651,7 @@ export function InventoryView({
         onOpenChange={setIsPurchaseOrderOpen}
         ingredients={ingredients}
         brands={brands}
+        onSavePurchaseOrder={onCreatePurchaseOrder}
         onFulfillPurchaseOrder={(items) => {
           items.forEach((it) => {
             onAdjustStockWithReason(

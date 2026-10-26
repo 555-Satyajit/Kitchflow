@@ -46,16 +46,33 @@ export function formatStationName(station: string): string {
     case 'DESSERT':
       return 'Dessert'
     case 'ASSEMBLY':
-      return 'Assembly'
+      return 'Main Kitchen'
     case 'PACKING':
-      return 'Packing'
+      return 'Packing / Dispatch'
     case 'ALL':
-      return 'All Stations'
+      return 'All Items'
     default:
       return station
         .toLowerCase()
         .split('_')
         .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
         .join(' ')
+  }
+}
+
+/**
+ * Returns a persistent or session-scoped Device UUID to avoid echoing back local WebSocket frames
+ */
+export function getDeviceUuid(): string {
+  if (typeof window === 'undefined') return 'server';
+  try {
+    let id = localStorage.getItem('kitchenos_device_uuid');
+    if (!id) {
+      id = 'dev-' + Math.random().toString(36).substring(2, 9) + '-' + Date.now().toString(36);
+      localStorage.setItem('kitchenos_device_uuid', id);
+    }
+    return id;
+  } catch {
+    return 'dev-anon';
   }
 }

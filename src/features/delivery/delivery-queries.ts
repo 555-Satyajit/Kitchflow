@@ -1,0 +1,85 @@
+import 'server-only';
+import { prisma } from '@/lib/prisma';
+import { Order } from '@/types';
+
+import { getCurrentKitchenContext } from '@/lib/session';
+
+export async function getDeliveryOrders(kitchenId?: string): Promise<Order[]> {
+  try {
+    let targetKitchenId = kitchenId;
+
+    if (!targetKitchenId) {
+      const sessionCtx = await getCurrentKitchenContext();
+      targetKitchenId = sessionCtx.kitchenId;
+    }
+
+    if (!targetKitchenId || targetKitchenId === 'default') {
+      return [];
+    }
+
+    const dbOrders = await prisma.order.findMany({
+      where: {
+        kitchenId: targetKitchenId,
+        channel: 'DIRECT',
+      },
+      include: {
+        brand: true,
+        items: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return dbOrders.map((o) => ({
+      id: o.id,
+      orderNumber: o.orderNumber,
+      channel: o.channel as Order['channel'],
+      brandId: o.brandId,
+      brandName: o.brand.name,
+      customerName: o.customerName ?? 'Guest Customer',
+      customerPhone: o.customerPhone ?? undefined,
+      customerAddress: o.customerAddress ?? undefined,
+      status: o.status as Order['status'],
+      paymentMethod: (o.paymentMethod as Order['paymentMethod']) ?? 'COD',
+      paymentStatus: (o.paymentStatus as Order['paymentStatus']) ?? 'PENDING',
+      targetPrepMinutes: o.targetPrepMinutes,
+      createdAt: o.createdAt.toISOString(),
+      updatedAt: (o as any).updatedAt ? (o as any).updatedAt.toISOString() : undefined,
+      version: (o as any).version ?? 0,
+      acknowledgedAt: o.acknowledgedAt?.toISOString(),
+      readyAt: o.readyAt?.toISOString(),
+      checklist: (o.checklist as unknown as Order['checklist']) ?? {
+        cutlery: false,
+        saucesDips: false,
+        napkins: false,
+        tamperSeal: false,
+        beverageSeparated: false,
+      },
+      dynamicChecklist: (o.dynamicChecklist as unknown as Order['dynamicChecklist']) ?? undefined,
+      financials: {
+        grossAmount: o.grossAmount,
+        discount: o.discount,
+        commissionRate: o.commissionRate,
+        commissionAmount: o.commissionAmount,
+        taxes: o.taxes,
+        packagingFeeCollected: o.packagingFeeCollected,
+        ingredientCost: o.ingredientCost,
+        packagingCost: o.packagingCost,
+        netMargin: o.netMargin,
+        netMarginPercentage: o.netMarginPercentage,
+      },
+      items: o.items.map((it) => ({
+        id: it.id,
+        menuItemId: it.menuItemId ?? '',
+        name: it.name,
+        station: it.station as Order['items'][number]['station'],
+        secondaryStations: it.secondaryStations as Order['items'][number]['secondaryStations'],
+        quantity: it.quantity,
+        price: it.price,
+        stationDone: it.stationDone,
+      })),
+    }));
+  } catch (error) {
+    console.error('Error fetching delivery orders from PostgreSQL:', error);
+    return [];
+  }
+}

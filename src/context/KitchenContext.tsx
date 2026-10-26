@@ -1,6 +1,6 @@
 'use client'
 
-import React, { createContext, useContext, useState } from 'react'
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { 
   INITIAL_BRANDS, 
   INITIAL_INGREDIENTS, 
@@ -21,6 +21,7 @@ import {
   StockLedgerEntry,
   PurchaseOrder,
   PurchaseOrderItem,
+  InventoryCategory,
   UserRole,
   KitchenLanguage,
   PaymentMethod,
@@ -31,9 +32,14 @@ import {
   DEFAULT_COMMISSION_SETTINGS, 
   calculateOrderFinancials 
 } from '@/lib/finance'
+import { useRealtimeReconnection } from '@/hooks/useRealtimeReconnection'
+import { getNavCountsAction, NavCountsResult } from '@/features/orders/order-actions'
 
 interface KitchenContextType {
   orders: Order[]
+  isOrdersLoaded: boolean
+  navCounts: NavCountsResult | null
+  refreshNavCounts: () => Promise<void>
   ingredients: Ingredient[]
   menuItems: MenuItem[]
   brands: Brand[]
@@ -45,6 +51,13 @@ interface KitchenContextType {
   userRole: UserRole
   language: KitchenLanguage
   inspectingOrder: Order | null
+  setOrders: React.Dispatch<React.SetStateAction<Order[]>>
+  setIsOrdersLoaded: (loaded: boolean) => void
+  setIngredients: React.Dispatch<React.SetStateAction<Ingredient[]>>
+  setStockLedger: React.Dispatch<React.SetStateAction<StockLedgerEntry[]>>
+  setPurchaseOrders: React.Dispatch<React.SetStateAction<PurchaseOrder[]>>
+  setBrands: React.Dispatch<React.SetStateAction<Brand[]>>
+  setMenuItems: React.Dispatch<React.SetStateAction<MenuItem[]>>
   setInspectingOrder: (order: Order | null) => void
   setUserRole: (role: UserRole) => void
   setLanguage: (lang: KitchenLanguage) => void
@@ -67,12 +80,14 @@ interface KitchenContextType {
     paymentMethod?: PaymentMethod
     paymentStatus?: PaymentStatus
     items: { menuItemId: string; quantity: number }[]
+    skipServerPersist?: boolean
   }) => Order
   handleAddBrand: (brand: Omit<Brand, 'id'>) => void
   handleAddMenuItem: (newItem: Omit<MenuItem, 'id'>) => void
   handleAddIngredient: (newIng: Omit<Ingredient, 'id'>) => void
   handleCreatePurchaseOrder: (params: {
     supplierName: string
+    category?: InventoryCategory
     horizon: 'MANUAL' | 'LOW_STOCK' | 'WEEKLY' | 'MONTHLY'
     items: { ingredientId: string; ingredientName: string; quantity: number; unit: string; costPerUnit: number }[]
     totalEstimatedCost: number
@@ -90,18 +105,45 @@ interface KitchenContextType {
 const KitchenContext = createContext<KitchenContextType | null>(null)
 
 export function KitchenProvider({ children }: { children: React.ReactNode }) {
-  const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS)
-  const [ingredients, setIngredients] = useState<Ingredient[]>(INITIAL_INGREDIENTS)
-  const [menuItems, setMenuItems] = useState<MenuItem[]>(INITIAL_MENU_ITEMS)
-  const [brands, setBrands] = useState<Brand[]>(INITIAL_BRANDS)
-  const [stockLedger, setStockLedger] = useState<StockLedgerEntry[]>(INITIAL_STOCK_LEDGER)
-  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>(INITIAL_PURCHASE_ORDERS)
+  const [orders, setOrders] = useState<Order[]>([])
+  const [isOrdersLoaded, setIsOrdersLoaded] = useState(false)
+  const [navCounts, setNavCounts] = useState<NavCountsResult | null>(null)
+  const [ingredients, setIngredients] = useState<Ingredient[]>([])
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([])
+  const [brands, setBrands] = useState<Brand[]>([])
+  const [stockLedger, setStockLedger] = useState<StockLedgerEntry[]>([])
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([])
   const [isPausedAll, setIsPausedAll] = useState(false)
   const [pausedPlatforms, setPausedPlatforms] = useState({ swiggy: false, zomato: false })
   const [commissionSettings, setCommissionSettings] = useState<CommissionSettings>(DEFAULT_COMMISSION_SETTINGS)
   const [userRole, setUserRole] = useState<UserRole>('OWNER')
   const [language, setLanguage] = useState<KitchenLanguage>('EN')
   const [inspectingOrder, setInspectingOrder] = useState<Order | null>(null)
+
+  // 1. Authoritative Nav Counts Sync
+  const refreshNavCounts = useCallback(async () => {
+    try {
+      const res = await getNavCountsAction()
+      if (res.ok && res.data) {
+        setNavCounts(res.data)
+        setIsOrdersLoaded(true)
+      }
+    } catch (err) {
+      console.warn('Global recovery nav-counts re-sync failed:', err)
+    }
+  }, [])
+
+  // 2. 4-Axis Global Network & Screen Wake Recovery Hook
+  useRealtimeReconnection({
+    channelName: 'kitchen-global-nav',
+    onReconnect: refreshNavCounts,
+    heartbeatIntervalMs: 25000,
+  })
+
+  // 3. Initial sync on mount
+  useEffect(() => {
+    refreshNavCounts()
+  }, [refreshNavCounts])
 
   const updateCommissionSettings = (newSettings: Partial<CommissionSettings>) => {
     setCommissionSettings((prev) => {
@@ -212,6 +254,7 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
   }
 
   const handleUpdateStatus = (orderId: string, newStatus: OrderStatus) => {
+    // 1. Optimistic UI update
     setOrders((prev) =>
       prev.map((o) => {
         if (o.id !== orderId) return o
@@ -228,6 +271,15 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
         }
       })
     )
+
+    // 2. Persist to live Supabase PostgreSQL database
+    import('@/features/orders/order-actions')
+      .then(({ updateOrderStatusAction }) => {
+        updateOrderStatusAction({ orderId, status: newStatus, kitchenId: 'kitch-koramangala-01' }).catch((err) => {
+          console.warn('Background Supabase status update note:', err?.message || err)
+        })
+      })
+      .catch((err) => console.warn('Could not load order-actions:', err))
   }
 
   const handleToggleStationItem = (orderId: string, itemId: string) => {
@@ -430,6 +482,7 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     paymentMethod = 'CASH',
     paymentStatus = 'PAID',
     items,
+    skipServerPersist = false,
   }: {
     brandId: string
     channel: Channel
@@ -439,6 +492,7 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     paymentMethod?: PaymentMethod
     paymentStatus?: PaymentStatus
     items: { menuItemId: string; quantity: number }[]
+    skipServerPersist?: boolean
   }): Order => {
     const brand = brands.find((b) => b.id === brandId) || brands[0]
     let itemSubtotal = 0
@@ -494,7 +548,7 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
       customerName: customerName.trim() || (channel === 'WALK_IN' ? 'Counter Walk-in' : 'Direct Customer'),
       customerPhone: customerPhone?.trim() || undefined,
       customerAddress: customerAddress?.trim() || undefined,
-      status: 'ACCEPTED', // Manual counter orders go straight to cook
+      status: 'PREPARING', // Auto-cook: routes straight to cook line as active cooking
       paymentMethod,
       paymentStatus,
       targetPrepMinutes: 12,
@@ -520,6 +574,32 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
       }
       return updated
     })
+
+    // Persist to Postgres database via Server Action (unless caller handles persistence directly)
+    if (!skipServerPersist) {
+      import('@/features/orders/order-actions')
+        .then(({ createManualOrderAction }) => {
+        createManualOrderAction({
+          brandId: brand.id,
+          channel,
+          customerName: customerName.trim() || (channel === 'WALK_IN' ? 'Counter Walk-in' : 'Direct Customer'),
+          customerPhone: customerPhone?.trim() || undefined,
+          customerAddress: customerAddress?.trim() || undefined,
+          paymentMethod,
+          paymentStatus,
+          items,
+        }).then((res) => {
+          if (res.ok && res.data) {
+            // Update order with database ID and Order Number
+            setOrders((prev) =>
+              prev.map((o) => (o.id === newOrd.id ? { ...o, id: res.data!.orderId, orderNumber: res.data!.orderNumber } : o))
+            )
+          }
+        }).catch((err) => console.warn('Could not persist POS order to Postgres:', err))
+      })
+      .catch((err) => console.warn('Could not load order-actions:', err))
+    }
+
     return newOrd
   }
 
@@ -549,6 +629,7 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
 
   const handleCreatePurchaseOrder = (params: {
     supplierName: string
+    category?: InventoryCategory
     horizon: 'MANUAL' | 'LOW_STOCK' | 'WEEKLY' | 'MONTHLY'
     items: { ingredientId: string; ingredientName: string; quantity: number; unit: string; costPerUnit: number }[]
     totalEstimatedCost: number
@@ -559,6 +640,7 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
       id: `po-${Date.now()}`,
       poNumber,
       supplierName: params.supplierName || 'Wholesale Mandi & Vendor',
+      category: params.category,
       horizon: params.horizon,
       status: 'PENDING_DELIVERY',
       items: params.items,
@@ -650,6 +732,9 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     <KitchenContext.Provider
       value={{
         orders,
+        isOrdersLoaded,
+        navCounts,
+        refreshNavCounts,
         ingredients,
         menuItems,
         brands,
@@ -661,6 +746,13 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
         userRole,
         language,
         inspectingOrder,
+        setOrders,
+        setIsOrdersLoaded,
+        setIngredients,
+        setStockLedger,
+        setPurchaseOrders,
+        setBrands,
+        setMenuItems,
         setInspectingOrder,
         setUserRole,
         setLanguage,
