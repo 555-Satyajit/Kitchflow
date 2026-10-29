@@ -114,12 +114,6 @@ export async function markOrderReadyAction(params: {
     revalidateTag(packingTags.all, 'max');
     revalidateTag(orderTags.all, 'max');
 
-    try {
-      revalidatePath('/packing');
-      revalidatePath('/kds');
-      revalidatePath('/orders');
-    } catch {}
-
     return { ok: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to mark order ready';

@@ -144,12 +144,6 @@ export async function completePackingAction(params: {
     revalidateTag(orderTags.all, 'max');
     revalidateTag(kdsTags.all, 'max');
 
-    try {
-      revalidatePath('/packing');
-      revalidatePath('/orders');
-      revalidatePath('/kds');
-    } catch {}
-
     return { ok: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to complete packing';

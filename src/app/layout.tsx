@@ -4,8 +4,8 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { QueryProvider } from "@/providers/query-provider";
 import { KitchenProvider } from "@/context/KitchenContext";
-import { AppHeaderServer } from "@/components/mobile/app-header-server";
-import { NavigationBarServer } from "@/components/mobile/navigation-bar-server";
+import { AppHeader } from "@/components/mobile/AppHeader";
+import { NavigationBar } from "@/components/mobile/NavigationBar";
 import { ServiceWorkerRegister } from "@/components/pwa/ServiceWorkerRegister";
 
 const inter = Inter({
@@ -58,13 +58,13 @@ export default function RootLayout({
         <QueryProvider>
           <KitchenProvider>
             <React.Suspense fallback={<div className="h-14 border-b border-border bg-background" />}>
-              <AppHeaderServer />
+              <AppHeader />
             </React.Suspense>
             <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-8">
               {children}
             </main>
             <React.Suspense fallback={null}>
-              <NavigationBarServer />
+              <NavigationBar />
             </React.Suspense>
             <ServiceWorkerRegister />
           </KitchenProvider>
