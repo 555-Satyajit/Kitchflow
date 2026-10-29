@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  /* Standalone Node.js production server build */
+  output: "standalone",
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {
