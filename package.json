@@ -31,6 +31,15 @@
     "react-dom": "19.3.0",
     "tailwind-merge": "^3.7.0"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "prisma",
+      "core-js",
+      "unrs-resolver"
+    ]
+  },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^20",
