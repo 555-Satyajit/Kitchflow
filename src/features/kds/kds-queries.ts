@@ -8,20 +8,28 @@ import { getCurrentKitchenContext } from '@/lib/session';
 export async function getKdsOrders(kitchenId?: string): Promise<Order[]> {
   try {
     let targetKitchenId = kitchenId;
+    let allowedKitchenIds: string[] = [];
 
     if (!targetKitchenId) {
       const sessionCtx = await getCurrentKitchenContext();
       targetKitchenId = sessionCtx.kitchenId;
+      allowedKitchenIds = sessionCtx.kitchenIds || [];
+    } else if (targetKitchenId === 'ALL') {
+      const sessionCtx = await getCurrentKitchenContext('ALL');
+      allowedKitchenIds = sessionCtx.kitchenIds || [];
     }
 
     if (!targetKitchenId || targetKitchenId === 'default') {
       return [];
     }
 
+    const isAll = targetKitchenId === 'ALL';
+    const kitchenWhere = isAll ? { in: allowedKitchenIds } : targetKitchenId;
+
     const dbOrders = await prisma.order.findMany({
       where: {
-        kitchenId: targetKitchenId,
-        status: { notIn: ['DISPATCHED', 'CANCELLED'] },
+        kitchenId: kitchenWhere,
+        status: { in: ['ACCEPTED', 'PREPARING'] },
       },
       include: {
         brand: true,
@@ -86,7 +94,10 @@ export async function getKdsOrders(kitchenId?: string): Promise<Order[]> {
 
     // Return empty array when no active cooking orders exist in database
     return [];
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.digest === 'HANGING_PROMISE_REJECTION' || error?.digest === 'NEXT_PRERENDER_SIGNAL') {
+      throw error;
+    }
     console.error('Error in getKdsOrders, returning empty queue:', error);
     return [];
   }
@@ -95,19 +106,35 @@ export async function getKdsOrders(kitchenId?: string): Promise<Order[]> {
 export async function getKdsConfiguredStations(kitchenId?: string): Promise<string[]> {
   try {
     let targetKitchenId = kitchenId;
+    let allowedKitchenIds: string[] = [];
+
     if (!targetKitchenId) {
-      const defaultKitchen = await prisma.kitchen.findFirst({
-        where: { isActive: true },
-        select: { id: true },
-      });
-      targetKitchenId = defaultKitchen?.id;
+      const sessionCtx = await getCurrentKitchenContext().catch(() => null);
+      if (sessionCtx) {
+        targetKitchenId = sessionCtx.kitchenId;
+        allowedKitchenIds = sessionCtx.kitchenIds || [];
+      } else {
+        const defaultKitchen = await prisma.kitchen.findFirst({
+          where: { isActive: true },
+          select: { id: true },
+        });
+        targetKitchenId = defaultKitchen?.id;
+      }
+    } else if (targetKitchenId === 'ALL') {
+      const sessionCtx = await getCurrentKitchenContext('ALL').catch(() => null);
+      allowedKitchenIds = sessionCtx?.kitchenIds || [];
     }
 
     if (!targetKitchenId) return [];
 
+    const isAll = targetKitchenId === 'ALL';
+    const brandWhere = isAll && allowedKitchenIds.length > 0 
+      ? { kitchenId: { in: allowedKitchenIds } } 
+      : !isAll ? { kitchenId: targetKitchenId } : {};
+
     const items = await prisma.menuItem.findMany({
       where: {
-        brand: { kitchenId: targetKitchenId },
+        brand: brandWhere,
       },
       select: { station: true, description: true },
     });
@@ -125,7 +152,10 @@ export async function getKdsConfiguredStations(kitchenId?: string): Promise<stri
     });
 
     return Array.from(set);
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.digest === 'HANGING_PROMISE_REJECTION' || error?.digest === 'NEXT_PRERENDER_SIGNAL') {
+      throw error;
+    }
     console.error('Error in getKdsConfiguredStations:', error);
     return [];
   }

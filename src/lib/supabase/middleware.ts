@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { verifySessionToken } from '@/lib/auth/token'
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -37,6 +38,11 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
+  // Verify active POS staff PIN session token (HMAC signed)
+  const staffSessionCookie = request.cookies.get('kitchflow_staff_session')?.value
+  const staffSession = staffSessionCookie ? await verifySessionToken(staffSessionCookie) : null
+  const hasStaffSession = !!staffSession
+
   const pathname = request.nextUrl.pathname
   const isLoginPage = pathname === '/login'
 
@@ -49,18 +55,58 @@ export async function updateSession(request: NextRequest) {
     pathname === '/manifest.json' ||
     pathname === '/favicon.ico'
 
+  const isAuthenticated = !!user || hasStaffSession
+
   // Protected kitchen routes: /orders, /kds, /inventory, /margins, /packing, /pos, /delivery
-  if (!user && !isPublicRoute) {
+  if (!isAuthenticated && !isPublicRoute) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     url.searchParams.set('redirectTo', pathname)
     return NextResponse.redirect(url)
   }
 
-  // If user is already authenticated and visits /login, redirect to /orders
-  if (user && isLoginPage) {
+  // Enforce granular route permissions for non-owner staff
+  if (staffSession && staffSession.role !== 'owner' && !isPublicRoute) {
+    const permissions: string[] = Array.isArray(staffSession.permissions)
+      ? staffSession.permissions
+      : ['orders', 'kds', 'packing']
+
+    const routePermissionMap: Record<string, string> = {
+      '/margins': 'margins',
+      '/inventory': 'inventory',
+      '/settings': 'settings',
+      '/kds': 'kds',
+      '/packing': 'packing',
+      '/orders': 'orders',
+      '/pos': 'pos',
+    }
+
+    for (const [routePrefix, requiredPerm] of Object.entries(routePermissionMap)) {
+      if (pathname === routePrefix || pathname.startsWith(`${routePrefix}/`)) {
+        if (!permissions.includes(requiredPerm)) {
+          // Find first allowed route for this staff member
+          const allowedRoute = ['/orders', '/kds', '/packing', '/pos', '/inventory']
+            .find((r) => permissions.includes(routePermissionMap[r])) || '/pos'
+
+          const url = request.nextUrl.clone()
+          url.pathname = allowedRoute
+          return NextResponse.redirect(url)
+        }
+        break
+      }
+    }
+  }
+
+  // If user is already authenticated and visits /login, redirect to /pos or /orders
+  if (isAuthenticated && isLoginPage) {
     const url = request.nextUrl.clone()
-    url.pathname = '/orders'
+    if (staffSession && staffSession.role !== 'owner') {
+      const perms: string[] = Array.isArray(staffSession.permissions) ? staffSession.permissions : []
+      const fallback = ['/orders', '/kds', '/packing', '/pos'].find(r => perms.includes(r.replace('/', ''))) || '/orders'
+      url.pathname = fallback
+    } else {
+      url.pathname = hasStaffSession ? '/pos' : '/orders'
+    }
     return NextResponse.redirect(url)
   }
 

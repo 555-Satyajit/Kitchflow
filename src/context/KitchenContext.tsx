@@ -1,6 +1,8 @@
 'use client'
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import { getDeviceUuid } from '@/lib/utils'
 import { 
   INITIAL_BRANDS, 
   INITIAL_INGREDIENTS, 
@@ -35,11 +37,18 @@ import {
 import { useRealtimeReconnection } from '@/hooks/useRealtimeReconnection'
 import { getNavCountsAction, NavCountsResult } from '@/features/orders/order-actions'
 
+export type NavCountDeltaAction = 
+  | { type: 'ORDER_PUNCHED'; payload?: any }
+  | { type: 'KDS_START_COOKING'; payload?: any }
+  | { type: 'KDS_COMPLETE'; payload?: any }
+  | { type: 'DISPATCH_COMPLETE'; payload?: any }
+
 interface KitchenContextType {
   orders: Order[]
   isOrdersLoaded: boolean
   navCounts: NavCountsResult | null
   refreshNavCounts: () => Promise<void>
+  dispatchOptimisticDelta: (action: NavCountDeltaAction) => void
   ingredients: Ingredient[]
   menuItems: MenuItem[]
   brands: Brand[]
@@ -53,6 +62,7 @@ interface KitchenContextType {
   inspectingOrder: Order | null
   setOrders: React.Dispatch<React.SetStateAction<Order[]>>
   setIsOrdersLoaded: (loaded: boolean) => void
+  setNavCounts: React.Dispatch<React.SetStateAction<NavCountsResult | null>>
   setIngredients: React.Dispatch<React.SetStateAction<Ingredient[]>>
   setStockLedger: React.Dispatch<React.SetStateAction<StockLedgerEntry[]>>
   setPurchaseOrders: React.Dispatch<React.SetStateAction<PurchaseOrder[]>>
@@ -104,10 +114,15 @@ interface KitchenContextType {
 
 const KitchenContext = createContext<KitchenContextType | null>(null)
 
-export function KitchenProvider({ children }: { children: React.ReactNode }) {
+export function KitchenProvider({
+  children,
+  initialNavCounts,
+}: {
+  children: React.ReactNode;
+  initialNavCounts?: NavCountsResult | null;
+}) {
   const [orders, setOrders] = useState<Order[]>([])
-  const [isOrdersLoaded, setIsOrdersLoaded] = useState(false)
-  const [navCounts, setNavCounts] = useState<NavCountsResult | null>(null)
+  const [isOrdersLoaded, setIsOrdersLoaded] = useState(Boolean(initialNavCounts))
   const [ingredients, setIngredients] = useState<Ingredient[]>([])
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [brands, setBrands] = useState<Brand[]>([])
@@ -119,30 +134,170 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
   const [userRole, setUserRole] = useState<UserRole>('OWNER')
   const [language, setLanguage] = useState<KitchenLanguage>('EN')
   const [inspectingOrder, setInspectingOrder] = useState<Order | null>(null)
+  
+  // 1. Initialize immediately with Server-Streamed / localStorage counts
+  const [fallbackCounts, setFallbackCounts] = useState<NavCountsResult | null>(initialNavCounts ?? null)
 
-  // 1. Authoritative Nav Counts Sync
+  // 2. Nav counts come exclusively from fallbackCounts (DB snapshot + optimistic deltas).
+  // We do NOT derive from context.orders because only the /orders page has the full list —
+  // KDS and Packing pages set partial subsets into orders, causing oscillating badge numbers.
+  // All mutations fire dispatchOptimisticDelta which keeps fallbackCounts perfectly in-sync.
+  const navCounts = fallbackCounts
+
+  // 3. Optimistic Delta Reducer for Inter-Terminal Actions
+  const dispatchOptimisticDelta = useCallback((action: NavCountDeltaAction) => {
+    setFallbackCounts((prev) => {
+      if (!prev) return prev
+      const current = { ...prev }
+
+      switch (action.type) {
+        case 'ORDER_PUNCHED':
+          current.ordersCount += 1
+          current.kdsCount += 1 // Transitions to ACCEPTED / cook queue
+          break
+        case 'KDS_START_COOKING': // ACCEPTED -> PREPARING
+          current.packingCount += 1
+          break
+        case 'KDS_COMPLETE': // PREPARING -> READY
+          current.kdsCount = Math.max(0, current.kdsCount - 1)
+          break
+        case 'DISPATCH_COMPLETE': // READY -> DISPATCHED
+          current.ordersCount = Math.max(0, current.ordersCount - 1)
+          current.packingCount = Math.max(0, current.packingCount - 1)
+          break
+      }
+
+      try {
+        localStorage.setItem('kitchflow_nav_counts_cache', JSON.stringify(current))
+      } catch {}
+      return current
+    })
+  }, [])
+
+  // Helper to read active kitchen ID safely in browser
+  const getActiveKitchenId = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('kitchflow_active_kitchen_id') || 'default'
+    }
+    return 'default'
+  }, [])
+
+  // Ref to track processed delta events to guarantee idempotency across channels
+  const processedEventIdsRef = useRef<Set<string>>(new Set())
+
+  // 4. Ingesting Inter-Station Events over Supabase Realtime Broadcast (Tenant-isolated, Zero WAL overhead)
+  useEffect(() => {
+    const supabase = createClient()
+    const kid = getActiveKitchenId()
+    const channelName = `kitchen-${kid}-counters`
+    const channel = supabase.channel(channelName)
+
+    const handleDelta = (payload: any) => {
+      // Avoid loopback echoes from own device
+      if (payload?.senderId && payload.senderId === getDeviceUuid()) return
+
+      // Idempotency guard: prevent duplicate delta processing if received across multiple channels
+      if (payload?.eventId) {
+        if (processedEventIdsRef.current.has(payload.eventId)) return
+        processedEventIdsRef.current.add(payload.eventId)
+        if (processedEventIdsRef.current.size > 200) {
+          const first = processedEventIdsRef.current.values().next().value
+          if (first) processedEventIdsRef.current.delete(first)
+        }
+      }
+
+      if (payload?.action?.type) {
+        dispatchOptimisticDelta(payload.action)
+      }
+    }
+
+    channel
+      .on('broadcast', { event: 'nav_counter_delta' }, ({ payload }) => handleDelta(payload))
+      .subscribe()
+
+    const globalChannel = kid !== 'all' && kid !== 'default'
+      ? supabase.channel('kitchen-all-counters')
+          .on('broadcast', { event: 'nav_counter_delta' }, ({ payload }) => handleDelta(payload))
+          .subscribe()
+      : null
+
+    return () => {
+      supabase.removeChannel(channel)
+      if (globalChannel) {
+        supabase.removeChannel(globalChannel)
+      }
+    }
+  }, [dispatchOptimisticDelta, getActiveKitchenId])
+
+  // 5. Authoritative Nav Counts Sync
   const refreshNavCounts = useCallback(async () => {
     try {
-      const res = await getNavCountsAction()
+      let activeKitchenId: string | undefined = undefined
+      if (typeof window !== 'undefined') {
+        const stored = localStorage.getItem('kitchflow_active_kitchen_id')
+        if (stored) activeKitchenId = stored
+      }
+      const res = await getNavCountsAction(activeKitchenId)
       if (res.ok && res.data) {
-        setNavCounts(res.data)
+        setFallbackCounts(res.data)
         setIsOrdersLoaded(true)
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('kitchflow_nav_counts_cache', JSON.stringify(res.data))
+          } catch (e) {}
+        }
       }
     } catch (err) {
       console.warn('Global recovery nav-counts re-sync failed:', err)
     }
   }, [])
 
-  // 2. 4-Axis Global Network & Screen Wake Recovery Hook
+  // Instantly load cached nav counts if available to achieve instant 0ms badge display
+  useEffect(() => {
+    const syncFromCache = () => {
+      try {
+        const cached = localStorage.getItem('kitchflow_nav_counts_cache')
+        if (cached) {
+          const parsed = JSON.parse(cached)
+          if (parsed && typeof parsed.ordersCount === 'number') {
+            setFallbackCounts(parsed)
+            setIsOrdersLoaded(true)
+          }
+        }
+      } catch (e) {}
+    }
+
+    syncFromCache()
+    window.addEventListener('kitchflow_nav_counts_updated', syncFromCache)
+    window.addEventListener('storage', syncFromCache)
+
+    return () => {
+      window.removeEventListener('kitchflow_nav_counts_updated', syncFromCache)
+      window.removeEventListener('storage', syncFromCache)
+    }
+  }, [])
+
+  // 6. 4-Axis Global Network & Screen Wake Recovery Hook (Tenant-scoped, event-driven recovery)
   useRealtimeReconnection({
-    channelName: 'kitchen-global-nav',
+    channelName: `kitchen-${getActiveKitchenId()}-nav`,
     onReconnect: refreshNavCounts,
-    heartbeatIntervalMs: 25000,
+    heartbeatIntervalMs: 60000, // 60s passive heartbeat to conserve DB resources at scale
   })
 
-  // 3. Initial sync on mount
+  // 7. Initial sync on mount — only if NavBadgesServer didn't already seed counts.
+  // NavBadgesClientHydrator calls setNavCounts() in a useEffect (slightly async),
+  // so we wait one tick before checking, to avoid a redundant DB round-trip.
+  const fallbackCountsRef = useRef(fallbackCounts)
+  fallbackCountsRef.current = fallbackCounts
+
   useEffect(() => {
-    refreshNavCounts()
+    const timer = setTimeout(() => {
+      // If counts are already populated (from NavBadgesServer RSC or localStorage), skip the call
+      if (fallbackCountsRef.current !== null) return
+      // Genuinely no counts yet (cold load, unauthenticated) — fetch from DB
+      refreshNavCounts()
+    }, 100)
+    return () => clearTimeout(timer)
   }, [refreshNavCounts])
 
   const updateCommissionSettings = (newSettings: Partial<CommissionSettings>) => {
@@ -272,10 +427,34 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
       })
     )
 
+    // Trigger in-memory optimistic delta & broadcast
+    let deltaAction: NavCountDeltaAction | null = null
+    if (newStatus === 'PREPARING') {
+      deltaAction = { type: 'KDS_START_COOKING' }
+    } else if (newStatus === 'READY') {
+      deltaAction = { type: 'KDS_COMPLETE' }
+    } else if (newStatus === 'DISPATCHED') {
+      deltaAction = { type: 'DISPATCH_COMPLETE' }
+    }
+
+    if (deltaAction) {
+      dispatchOptimisticDelta(deltaAction)
+      try {
+        const supabase = createClient()
+        const kid = getActiveKitchenId()
+        supabase.channel(`kitchen-${kid}-counters`).send({
+          type: 'broadcast',
+          event: 'nav_counter_delta',
+          payload: { action: deltaAction, senderId: getDeviceUuid() }
+        })
+      } catch (e) {}
+    }
+
     // 2. Persist to live Supabase PostgreSQL database
+    const activeKid = getActiveKitchenId()
     import('@/features/orders/order-actions')
       .then(({ updateOrderStatusAction }) => {
-        updateOrderStatusAction({ orderId, status: newStatus, kitchenId: 'kitch-koramangala-01' }).catch((err) => {
+        updateOrderStatusAction({ orderId, status: newStatus, kitchenId: activeKid !== 'default' ? activeKid : undefined }).catch((err) => {
           console.warn('Background Supabase status update note:', err?.message || err)
         })
       })
@@ -471,6 +650,17 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     }
 
     setOrders((prev) => [newOrd, ...prev])
+
+    dispatchOptimisticDelta({ type: 'ORDER_PUNCHED' })
+    try {
+      const supabase = createClient()
+      const kid = getActiveKitchenId()
+      supabase.channel(`kitchen-${kid}-counters`).send({
+        type: 'broadcast',
+        event: 'nav_counter_delta',
+        payload: { action: { type: 'ORDER_PUNCHED' }, eventId: `SIM_ORDER_PUNCHED-${newOrd.id}`, senderId: getDeviceUuid() }
+      })
+    } catch (e) {}
   }
 
   const handleCreateManualOrder = ({
@@ -575,11 +765,29 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
       return updated
     })
 
+    dispatchOptimisticDelta({ type: 'ORDER_PUNCHED' })
+    if (newOrd.status === 'PREPARING') {
+      dispatchOptimisticDelta({ type: 'KDS_START_COOKING' })
+    }
+    if (!skipServerPersist) {
+      try {
+        const supabase = createClient()
+        const kid = getActiveKitchenId()
+        supabase.channel(`kitchen-${kid}-counters`).send({
+          type: 'broadcast',
+          event: 'nav_counter_delta',
+          payload: { action: { type: 'ORDER_PUNCHED' }, eventId: `ORDER_PUNCHED-${newOrd.id}`, senderId: getDeviceUuid() }
+        })
+      } catch (e) {}
+    }
+
     // Persist to Postgres database via Server Action (unless caller handles persistence directly)
     if (!skipServerPersist) {
       import('@/features/orders/order-actions')
         .then(({ createManualOrderAction }) => {
+        const activeKid = getActiveKitchenId()
         createManualOrderAction({
+          kitchenId: activeKid !== 'default' ? activeKid : undefined,
           brandId: brand.id,
           channel,
           customerName: customerName.trim() || (channel === 'WALK_IN' ? 'Counter Walk-in' : 'Direct Customer'),
@@ -604,11 +812,46 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
   }
 
   const handleAddBrand = (brand: Omit<Brand, 'id'>) => {
+    const tempId = `b-${Date.now()}`
     const newBrand: Brand = {
       ...brand,
-      id: `b-${Date.now()}`,
+      id: tempId,
     }
     setBrands((prev) => [...prev, newBrand])
+
+    // Asynchronously persist to PostgreSQL in background
+    let activeKid = ''
+    try {
+      activeKid = localStorage.getItem('kitchflow_active_kitchen_id') || ''
+    } catch (e) {}
+
+    import('@/actions/settings')
+      .then(({ saveBrandAction, getOrganizationKitchensAction }) => {
+        const persist = async () => {
+          let targetKitchenId = activeKid
+          if (!targetKitchenId) {
+            const kRes = await getOrganizationKitchensAction()
+            if (kRes.ok && kRes.data) {
+              targetKitchenId = kRes.data.activeKitchenId || kRes.data.kitchens[0]?.id || ''
+            }
+          }
+          if (targetKitchenId) {
+            const res = await saveBrandAction({
+              kitchenId: targetKitchenId,
+              name: brand.name,
+              tagline: brand.tagline,
+              color: brand.color,
+            })
+            if (res.ok && res.data?.brandId) {
+              setBrands((prev) =>
+                prev.map((b) => (b.id === tempId ? { ...b, id: res.data!.brandId } : b))
+              )
+            }
+          }
+        }
+        persist().catch((err) => console.warn('Could not persist brand to PostgreSQL:', err))
+      })
+      .catch((err) => console.warn('Could not load settings action:', err))
   }
 
   const handleAddMenuItem = (newItem: Omit<MenuItem, 'id'>) => {
@@ -733,8 +976,9 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
       value={{
         orders,
         isOrdersLoaded,
-        navCounts,
+        navCounts: navCounts,
         refreshNavCounts,
+        dispatchOptimisticDelta,
         ingredients,
         menuItems,
         brands,
@@ -748,6 +992,7 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
         inspectingOrder,
         setOrders,
         setIsOrdersLoaded,
+        setNavCounts: setFallbackCounts,
         setIngredients,
         setStockLedger,
         setPurchaseOrders,

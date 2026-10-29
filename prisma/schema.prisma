@@ -137,12 +137,20 @@ model OrganizationMember {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   userId         String       @map("user_id")
   role           MemberRole   @default(kitchen_staff)
+  customRole     String?      @map("custom_role")
+  permissions    String[]     @default(["orders", "kds", "packing"]) @map("permissions")
+  kitchenId      String?      @map("kitchen_id")
+  kitchen        Kitchen?     @relation(fields: [kitchenId], references: [id], onDelete: SetNull)
+  name           String?
+  pin            String?
+  allowedBrands  String[]     @default([]) @map("allowed_brands")
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
 
   @@unique([organizationId, userId])
   @@index([userId], map: "idx_org_members_user_id")
   @@index([organizationId], map: "idx_org_members_org_id")
+  @@index([kitchenId], map: "idx_org_members_kitchen_id")
   @@map("organization_members")
 }
 
@@ -153,6 +161,13 @@ model Kitchen {
   organization   Organization?   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   name           String
   address        String?
+  phone          String?
+  email          String?
+  gstin          String?
+  fssaiLic       String?         @map("fssai_lic")
+  gstRate        Float           @default(5.0) @map("gst_rate")
+  thermalRollSize String         @default("80mm") @map("thermal_roll_size")
+  invoiceTerms   String?         @default("Food once sold cannot be returned or exchanged.") @map("invoice_terms")
   timezone       String          @default("UTC")
   currency       String          @default("USD")
   isActive       Boolean         @default(true) @map("is_active")
@@ -164,6 +179,7 @@ model Kitchen {
   orders             Order[]
   purchaseOrders     PurchaseOrder[]
   dispatchCheckRules DispatchCheckRule[]
+  assignedStaff      OrganizationMember[]
 
   @@index([organizationId], map: "idx_kitchens_org_id")
   @@map("kitchens")
@@ -171,16 +187,21 @@ model Kitchen {
 
 // 4. Virtual Brands
 model Brand {
-  id        String     @id @default(uuid())
-  kitchenId String     @map("kitchen_id")
-  kitchen   Kitchen    @relation(fields: [kitchenId], references: [id], onDelete: Cascade)
-  name      String
-  tagline   String?
-  color     String     @default("#f97316")
-  logoUrl   String?    @map("logo_url")
-  active    Boolean    @default(true)
-  createdAt DateTime   @default(now()) @map("created_at")
-  updatedAt DateTime   @updatedAt @map("updated_at")
+  id           String     @id @default(uuid())
+  kitchenId    String     @map("kitchen_id")
+  kitchen      Kitchen    @relation(fields: [kitchenId], references: [id], onDelete: Cascade)
+  name         String
+  tagline      String?
+  color        String     @default("#f97316")
+  logoUrl      String?    @map("logo_url")
+  address      String?
+  phone        String?
+  email        String?
+  fssaiLic     String?    @map("fssai_lic")
+  invoiceTerms String?    @map("invoice_terms")
+  active       Boolean    @default(true)
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
 
   menuItems MenuItem[]
   orders    Order[]
@@ -276,6 +297,7 @@ model Order {
   // Financial Snapshot
   grossAmount           Float             @default(0) @map("gross_amount")
   discount              Float             @default(0)
+  couponCode            String?           @map("coupon_code")
   commissionRate        Float             @default(0.22) @map("commission_rate")
   commissionAmount      Float             @default(0) @map("commission_amount")
   taxes                 Float             @default(0)

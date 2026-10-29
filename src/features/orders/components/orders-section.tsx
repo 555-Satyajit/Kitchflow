@@ -2,12 +2,14 @@ import React from 'react';
 import { getOrdersData } from '../order-queries';
 import { OrdersSectionClient } from './orders-section-client';
 import { Skeleton } from '@/components/ui/skeleton';
+import { requirePermission } from '@/lib/session';
 
 interface OrdersSectionProps {
   kitchenId?: string;
 }
 
 export async function OrdersSection({ kitchenId }: OrdersSectionProps) {
+  await requirePermission('orders');
   const data = await getOrdersData(kitchenId);
 
   return (

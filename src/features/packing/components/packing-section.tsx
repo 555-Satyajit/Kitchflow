@@ -2,12 +2,14 @@ import React from 'react';
 import { getPackingOrders } from '../packing-queries';
 import { PackingSectionClient } from './packing-section-client';
 import { Skeleton } from '@/components/ui/skeleton';
+import { requirePermission } from '@/lib/session';
 
 interface PackingSectionProps {
   kitchenId?: string;
 }
 
 export async function PackingSection({ kitchenId }: PackingSectionProps) {
+  await requirePermission('packing');
   const orders = await getPackingOrders(kitchenId);
 
   return <PackingSectionClient initialOrders={orders} kitchenId={kitchenId} />;

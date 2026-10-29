@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { revalidateTag } from 'next/cache';
 import { inventoryTags } from './inventory-cache';
 import { StockReasonCode } from '@/types';
+import { getCurrentKitchenContext } from '@/lib/session';
 
 export type ActionResult<T = void> = 
   | { ok: true; data?: T }
@@ -17,40 +18,94 @@ export async function adjustStockAction(params: {
   kitchenId?: string;
 }): Promise<ActionResult<{ newStock: number }>> {
   try {
-    const { ingredientId, delta, reason, note, kitchenId } = params;
-
-    const ingredient = await prisma.ingredient.findUnique({
-      where: { id: ingredientId },
-    });
-
-    if (!ingredient) {
-      return { ok: false, error: 'Ingredient not found' };
+    const session = await getCurrentKitchenContext();
+    if (session.role !== 'owner' && !session.permissions?.includes('inventory')) {
+      return { ok: false, error: 'Unauthorized: Inventory permission required' };
     }
 
-    const previousStock = ingredient.currentStock;
-    const newStock = Math.max(0, previousStock + delta);
+    const { ingredientId, delta, reason, note, kitchenId } = params;
 
-    // Auto-86 Threshold Evaluation:
-    // Check if ingredient dipped below minThreshold or 0, or recovered
-    const isIngredientCritical = newStock <= 0 || newStock < ingredient.minThreshold;
+    let finalNewStock = 0;
+
+    const allowedKitchenIds = session.kitchenIds && session.kitchenIds.length > 0
+      ? session.kitchenIds
+      : (session.kitchenId && session.kitchenId !== 'ALL' ? [session.kitchenId] : []);
 
     await prisma.$transaction(async (tx) => {
-      await tx.ingredient.update({
-        where: { id: ingredientId },
-        data: { currentStock: newStock },
-      });
+      // 1. Atomic database-level stock update
+      // Prevents lost update anomalies when parallel orders/adjustments occur simultaneously
+      let updatedIngredient;
+      if (delta < 0) {
+        // For outflow / depletion: decrement atomically but avoid negative balance
+        const current = await tx.ingredient.findFirst({
+          where: {
+            id: ingredientId,
+            ...(allowedKitchenIds.length > 0 ? { kitchenId: { in: allowedKitchenIds } } : {}),
+          },
+          select: { currentStock: true, minThreshold: true, unit: true },
+        });
+        if (!current) throw new Error('Ingredient not found or unauthorized');
+        const previousStock = current.currentStock;
+        const actualDeduction = Math.min(previousStock, Math.abs(delta));
+        updatedIngredient = await tx.ingredient.update({
+          where: { id: ingredientId },
+          data: {
+            currentStock: {
+              decrement: actualDeduction,
+            },
+          },
+        });
+        finalNewStock = updatedIngredient.currentStock;
 
-      await tx.stockLedgerEntry.create({
-        data: {
-          ingredientId,
-          previousStock,
-          delta,
-          balanceAfter: newStock,
-          unit: ingredient.unit,
-          reason,
-          notes: note,
-        },
-      });
+        await tx.stockLedgerEntry.create({
+          data: {
+            ingredientId,
+            previousStock,
+            delta: -actualDeduction,
+            balanceAfter: finalNewStock,
+            unit: updatedIngredient.unit,
+            reason,
+            notes: note,
+          },
+        });
+      } else {
+        // For inflow / restock: increment atomically
+        const current = await tx.ingredient.findFirst({
+          where: {
+            id: ingredientId,
+            ...(allowedKitchenIds.length > 0 ? { kitchenId: { in: allowedKitchenIds } } : {}),
+          },
+          select: { currentStock: true, unit: true },
+        });
+        if (!current) throw new Error('Ingredient not found or unauthorized');
+        const previousStock = current.currentStock;
+
+        updatedIngredient = await tx.ingredient.update({
+          where: { id: ingredientId },
+          data: {
+            currentStock: {
+              increment: delta,
+            },
+          },
+        });
+        finalNewStock = updatedIngredient.currentStock;
+
+        await tx.stockLedgerEntry.create({
+          data: {
+            ingredientId,
+            previousStock,
+            delta,
+            balanceAfter: finalNewStock,
+            unit: updatedIngredient.unit,
+            reason,
+            notes: note,
+          },
+        });
+      }
+
+      // Auto-86 Threshold Evaluation based on guaranteed atomic balanceAfter
+      const isIngredientCritical =
+        finalNewStock <= 0 || finalNewStock < updatedIngredient.minThreshold;
 
       // Find all dishes using this ingredient in their BOM recipe
       const dependentRecipes = await tx.recipeIngredient.findMany({
@@ -65,7 +120,7 @@ export async function adjustStockAction(params: {
       });
 
       for (const rec of dependentRecipes) {
-        const dishNeedsMoreThanStock = newStock < rec.quantity;
+        const dishNeedsMoreThanStock = finalNewStock < rec.quantity;
         const shouldBeAuto86 = isIngredientCritical || dishNeedsMoreThanStock;
 
         // If stock is critically depleted and dish was active, automatically 86 it
@@ -114,7 +169,7 @@ export async function adjustStockAction(params: {
       revalidateTag(inventoryTags.menuItems(kitchenId), 'max');
     }
 
-    return { ok: true, data: { newStock } };
+    return { ok: true, data: { newStock: finalNewStock } };
   } catch (error) {
     console.error('Error adjusting stock:', error);
     const message = error instanceof Error ? error.message : 'Failed to adjust stock';
@@ -128,14 +183,26 @@ export async function toggleMenuItemPlatformAction(params: {
   kitchenId?: string;
 }): Promise<ActionResult> {
   try {
+    const session = await getCurrentKitchenContext();
+    if (session.role !== 'owner' && !session.permissions?.includes('inventory') && !session.permissions?.includes('settings')) {
+      return { ok: false, error: 'Unauthorized: Inventory or Settings permission required' };
+    }
+
     const { menuItemId, platform, kitchenId } = params;
 
-    const item = await prisma.menuItem.findUnique({
-      where: { id: menuItemId },
+    const allowedKitchenIds = session.kitchenIds && session.kitchenIds.length > 0
+      ? session.kitchenIds
+      : (session.kitchenId && session.kitchenId !== 'ALL' ? [session.kitchenId] : []);
+
+    const item = await prisma.menuItem.findFirst({
+      where: {
+        id: menuItemId,
+        ...(allowedKitchenIds.length > 0 ? { brand: { kitchenId: { in: allowedKitchenIds } } } : {}),
+      },
     });
 
     if (!item) {
-      return { ok: false, error: 'Menu item not found' };
+      return { ok: false, error: 'Menu item not found or unauthorized' };
     }
 
     const updateData = platform === 'SWIGGY'
@@ -164,7 +231,27 @@ export async function updateIngredientCostAction(params: {
   kitchenId?: string;
 }): Promise<ActionResult> {
   try {
+    const session = await getCurrentKitchenContext();
+    if (session.role !== 'owner' && !session.permissions?.includes('inventory')) {
+      return { ok: false, error: 'Unauthorized: Inventory permission required' };
+    }
+
     const { ingredientId, costPerUnit, kitchenId } = params;
+
+    const allowedKitchenIds = session.kitchenIds && session.kitchenIds.length > 0
+      ? session.kitchenIds
+      : (session.kitchenId && session.kitchenId !== 'ALL' ? [session.kitchenId] : []);
+
+    const existing = await prisma.ingredient.findFirst({
+      where: {
+        id: ingredientId,
+        ...(allowedKitchenIds.length > 0 ? { kitchenId: { in: allowedKitchenIds } } : {}),
+      },
+    });
+
+    if (!existing) {
+      return { ok: false, error: 'Ingredient not found or unauthorized' };
+    }
 
     await prisma.ingredient.update({
       where: { id: ingredientId },
@@ -195,11 +282,15 @@ export async function addIngredientAction(params: {
   costPerUnit: number;
 }): Promise<ActionResult<{ ingredientId: string }>> {
   try {
+    const session = await getCurrentKitchenContext();
+    if (session.role !== 'owner' && !session.permissions?.includes('inventory')) {
+      return { ok: false, error: 'Unauthorized: Inventory permission required' };
+    }
+
     let { kitchenId, brandId, name, category, supplierName, storageZone, unit, currentStock, minThreshold, costPerUnit } = params;
 
-    if (!kitchenId) {
-      const defaultKitchen = await prisma.kitchen.findFirst({ select: { id: true } });
-      kitchenId = defaultKitchen?.id;
+    if (!kitchenId || kitchenId === 'default') {
+      kitchenId = session.kitchenId === 'ALL' ? session.kitchenIds?.[0] : session.kitchenId;
     }
 
     if (!kitchenId) {
@@ -240,6 +331,11 @@ export async function addMenuItemAction(params: {
   recipe?: Array<{ ingredientId: string; quantity: number }>;
 }): Promise<ActionResult<{ menuItemId: string }>> {
   try {
+    const session = await getCurrentKitchenContext();
+    if (session.role !== 'owner' && !session.permissions?.includes('inventory') && !session.permissions?.includes('settings')) {
+      return { ok: false, error: 'Unauthorized: Inventory or Settings permission required' };
+    }
+
     const { brandId, name, description, station, sellingPrice, packagingCost = 15, recipe = [], kitchenId } = params;
 
     const VALID_STATIONS = [
@@ -325,11 +421,15 @@ export async function createPurchaseOrderAction(params: {
   note?: string;
 }): Promise<ActionResult<{ poId: string; poNumber: string }>> {
   try {
+    const session = await getCurrentKitchenContext();
+    if (session.role !== 'owner' && !session.permissions?.includes('procurement') && !session.permissions?.includes('inventory')) {
+      return { ok: false, error: 'Unauthorized: Procurement or Inventory permission required' };
+    }
+
     let { kitchenId, supplierName, category, horizon = 'MANUAL', items, totalEstimatedCost, note } = params;
 
-    if (!kitchenId) {
-      const defaultKitchen = await prisma.kitchen.findFirst({ select: { id: true } });
-      kitchenId = defaultKitchen?.id;
+    if (!kitchenId || kitchenId === 'default') {
+      kitchenId = session.kitchenId === 'ALL' ? session.kitchenIds?.[0] : session.kitchenId;
     }
 
     if (!kitchenId) {
@@ -375,15 +475,27 @@ export async function receivePurchaseOrderAction(params: {
   kitchenId?: string;
 }): Promise<ActionResult<{ actualCost: number; status: string }>> {
   try {
+    const session = await getCurrentKitchenContext();
+    if (session.role !== 'owner' && !session.permissions?.includes('procurement') && !session.permissions?.includes('inventory')) {
+      return { ok: false, error: 'Unauthorized: Procurement or Inventory permission required' };
+    }
+
     const { poId, reconciledQuantities, discrepancyNote, kitchenId } = params;
 
-    const po = await prisma.purchaseOrder.findUnique({
-      where: { id: poId },
+    const allowedKitchenIds = session.kitchenIds && session.kitchenIds.length > 0
+      ? session.kitchenIds
+      : (session.kitchenId && session.kitchenId !== 'ALL' ? [session.kitchenId] : []);
+
+    const po = await prisma.purchaseOrder.findFirst({
+      where: {
+        id: poId,
+        ...(allowedKitchenIds.length > 0 ? { kitchenId: { in: allowedKitchenIds } } : {}),
+      },
       include: { items: { include: { ingredient: true } } },
     });
 
     if (!po) {
-      return { ok: false, error: 'Purchase Order not found' };
+      return { ok: false, error: 'Purchase Order not found or unauthorized' };
     }
 
     let hasDiscrepancy = false;
@@ -407,20 +519,24 @@ export async function receivePurchaseOrderAction(params: {
           data: { receivedQuantity: actualQty },
         });
 
-        // Stock in the actual delivered quantity and write to audit ledger
+        // Stock in the actual delivered quantity atomically and write to audit ledger
         if (actualQty > 0) {
           const currentIng = await tx.ingredient.findUnique({
             where: { id: item.ingredientId },
+            select: { currentStock: true, unit: true },
           });
 
           if (currentIng) {
             const previousStock = currentIng.currentStock;
-            const balanceAfter = previousStock + actualQty;
-
-            await tx.ingredient.update({
+            const updated = await tx.ingredient.update({
               where: { id: item.ingredientId },
-              data: { currentStock: balanceAfter },
+              data: {
+                currentStock: {
+                  increment: actualQty,
+                },
+              },
             });
+            const balanceAfter = updated.currentStock;
 
             await tx.stockLedgerEntry.create({
               data: {

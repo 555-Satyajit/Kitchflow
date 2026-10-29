@@ -7,17 +7,26 @@ import { getCurrentKitchenContext } from '@/lib/session';
 export async function getMarginsOrders(kitchenId?: string): Promise<Order[]> {
   try {
     let targetKitchenId = kitchenId;
+    let allowedKitchenIds: string[] = [];
+
     if (!targetKitchenId) {
       const sessionCtx = await getCurrentKitchenContext();
       targetKitchenId = sessionCtx.kitchenId;
+      allowedKitchenIds = sessionCtx.kitchenIds || [];
+    } else if (targetKitchenId === 'ALL') {
+      const sessionCtx = await getCurrentKitchenContext('ALL');
+      allowedKitchenIds = sessionCtx.kitchenIds || [];
     }
 
     if (!targetKitchenId || targetKitchenId === 'default') {
       return [];
     }
 
+    const isAll = targetKitchenId === 'ALL';
+    const kitchenWhere = isAll ? { in: allowedKitchenIds } : targetKitchenId;
+
     const dbOrders = await prisma.order.findMany({
-      where: { kitchenId: targetKitchenId },
+      where: { kitchenId: kitchenWhere },
       include: {
         brand: true,
         items: true,
@@ -76,7 +85,10 @@ export async function getMarginsOrders(kitchenId?: string): Promise<Order[]> {
     }
 
     return INITIAL_ORDERS;
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.digest === 'HANGING_PROMISE_REJECTION' || error?.digest === 'NEXT_PRERENDER_SIGNAL') {
+      throw error;
+    }
     console.error('Error in getMarginsOrders, returning fallback:', error);
     return INITIAL_ORDERS;
   }

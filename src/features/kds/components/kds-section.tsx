@@ -2,12 +2,14 @@ import React from 'react';
 import { getKdsOrders, getKdsConfiguredStations } from '../kds-queries';
 import { KdsSectionClient } from './kds-section-client';
 import { Skeleton } from '@/components/ui/skeleton';
+import { requirePermission } from '@/lib/session';
 
 interface KdsSectionProps {
   kitchenId?: string;
 }
 
 export async function KdsSection({ kitchenId }: KdsSectionProps) {
+  await requirePermission('kds');
   const [orders, configuredStations] = await Promise.all([
     getKdsOrders(kitchenId),
     getKdsConfiguredStations(kitchenId),

@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn, formatStationName } from '@/lib/utils'
 import { useKitchen } from '@/context/KitchenContext'
+import { playKitchenSound } from '@/lib/sound-engine'
 
 interface KDSViewProps {
   orders: Order[]
@@ -44,24 +45,10 @@ export function KDSView({
     return () => clearInterval(timer)
   }, [])
 
-  // Web Audio chime for new unacknowledged / overdue tickets
-  const playAlertChime = () => {
-    try {
-      const audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
-      const osc = audioCtx.createOscillator()
-      const gain = audioCtx.createGain()
-      osc.type = 'sine'
-      osc.frequency.setValueAtTime(587.33, audioCtx.currentTime) // D5
-      osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.15) // A5
-      gain.gain.setValueAtTime(0.2, audioCtx.currentTime)
-      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3)
-      osc.connect(gain)
-      gain.connect(audioCtx.destination)
-      osc.start()
-      osc.stop(audioCtx.currentTime + 0.3)
-    } catch {
-      // AudioContext might be blocked until user gesture
-    }
+  // High-fidelity synthesized alerts using the KitchenOS sound engine
+  const playAlertChime = (type: 'NEW_ORDER' | 'SLA_URGENT' = 'SLA_URGENT') => {
+    if (!soundEnabled) return
+    playKitchenSound(type, 0.3)
   }
 
   // Dynamically detect stations configured on dishes and active in incoming orders

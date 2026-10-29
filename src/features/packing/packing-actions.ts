@@ -1,8 +1,10 @@
 'use server';
 
 import { prisma } from '@/lib/prisma';
-import { revalidateTag } from 'next/cache';
+import { revalidateTag, revalidatePath } from 'next/cache';
 import { packingTags } from './packing-cache';
+import { orderTags } from '@/features/orders/order-cache';
+import { kdsTags } from '@/features/kds/kds-cache';
 import { PackingChecklist } from '@/types';
 
 export type ActionResult<T = void> = 
@@ -17,15 +19,27 @@ export async function toggleChecklistItemAction(params: {
   clientVersion?: number;
 }): Promise<ActionResult<{ checklist: PackingChecklist; version: number }>> {
   try {
+    const session = await getCurrentKitchenContext();
+    if (session.role !== 'owner' && !session.permissions?.includes('packing')) {
+      return { ok: false, error: 'Unauthorized: Dispatch/Packing permission required' };
+    }
+
     const { orderId, itemKey, kitchenId, targetChecked, clientVersion } = params;
 
-    const order = await prisma.order.findUnique({
-      where: { id: orderId },
+    const allowedKitchenIds = session.kitchenIds && session.kitchenIds.length > 0
+      ? session.kitchenIds
+      : (session.kitchenId && session.kitchenId !== 'ALL' ? [session.kitchenId] : []);
+
+    const order = await prisma.order.findFirst({
+      where: {
+        id: orderId,
+        ...(allowedKitchenIds.length > 0 ? { kitchenId: { in: allowedKitchenIds } } : {}),
+      },
       select: { id: true, checklist: true, version: true },
     });
 
     if (!order) {
-      return { ok: false, error: 'Order not found' };
+      return { ok: false, error: 'Order not found or unauthorized' };
     }
 
     const currentChecklist: PackingChecklist = (order.checklist as unknown as PackingChecklist) || {
@@ -93,7 +107,28 @@ export async function completePackingAction(params: {
   kitchenId?: string;
 }): Promise<ActionResult> {
   try {
+    const session = await getCurrentKitchenContext();
+    if (session.role !== 'owner' && !session.permissions?.includes('packing')) {
+      return { ok: false, error: 'Unauthorized: Dispatch/Packing permission required' };
+    }
+
     const { orderId, kitchenId } = params;
+
+    const allowedKitchenIds = session.kitchenIds && session.kitchenIds.length > 0
+      ? session.kitchenIds
+      : (session.kitchenId && session.kitchenId !== 'ALL' ? [session.kitchenId] : []);
+
+    const existingOrder = await prisma.order.findFirst({
+      where: {
+        id: orderId,
+        ...(allowedKitchenIds.length > 0 ? { kitchenId: { in: allowedKitchenIds } } : {}),
+      },
+      select: { id: true, kitchenId: true },
+    });
+
+    if (!existingOrder) {
+      return { ok: false, error: 'Order not found or unauthorized' };
+    }
 
     await prisma.order.update({
       where: { id: orderId },
@@ -102,7 +137,18 @@ export async function completePackingAction(params: {
 
     if (kitchenId) {
       revalidateTag(packingTags.kitchen(kitchenId), 'max');
+      revalidateTag(orderTags.kitchen(kitchenId), 'max');
+      revalidateTag(kdsTags.kitchen(kitchenId), 'max');
     }
+    revalidateTag(packingTags.all, 'max');
+    revalidateTag(orderTags.all, 'max');
+    revalidateTag(kdsTags.all, 'max');
+
+    try {
+      revalidatePath('/packing');
+      revalidatePath('/orders');
+      revalidatePath('/kds');
+    } catch {}
 
     return { ok: true };
   } catch (error) {
@@ -112,22 +158,32 @@ export async function completePackingAction(params: {
   }
 }
 
+import { getCurrentKitchenContext } from '@/lib/session';
+
 export async function fetchPackingOrdersClientAction(kitchenId?: string) {
   try {
     let targetKitchenId = kitchenId;
+    let allowedKitchenIds: string[] = [];
+
     if (!targetKitchenId) {
-      const defaultKitchen = await prisma.kitchen.findFirst({
-        where: { isActive: true },
-        select: { id: true },
-      });
-      targetKitchenId = defaultKitchen?.id;
+      const sessionCtx = await getCurrentKitchenContext();
+      targetKitchenId = sessionCtx.kitchenId;
+      allowedKitchenIds = sessionCtx.kitchenIds || [];
+    } else if (targetKitchenId === 'ALL') {
+      const sessionCtx = await getCurrentKitchenContext('ALL');
+      allowedKitchenIds = sessionCtx.kitchenIds || [];
     }
 
-    if (!targetKitchenId) return [];
+    if (!targetKitchenId || targetKitchenId === 'default') {
+      return [];
+    }
+
+    const isAll = targetKitchenId === 'ALL';
+    const kitchenWhere = isAll ? { in: allowedKitchenIds } : targetKitchenId;
 
     const dbOrders = await prisma.order.findMany({
       where: {
-        kitchenId: targetKitchenId,
+        kitchenId: kitchenWhere,
         status: { in: ['PREPARING', 'READY'] },
       },
       include: {
@@ -316,17 +372,18 @@ export async function createDispatchRuleAction(params: {
   description?: string;
 }): Promise<ActionResult<DispatchRuleDTO>> {
   try {
-    let targetKitchenId = params.kitchenId;
-    if (!targetKitchenId) {
-      const defaultKitchen = await prisma.kitchen.findFirst({
-        where: { isActive: true },
-        select: { id: true },
-      });
-      targetKitchenId = defaultKitchen?.id;
+    const session = await getCurrentKitchenContext();
+    if (session.role !== 'owner' && !session.permissions?.includes('packing') && !session.permissions?.includes('settings')) {
+      return { ok: false, error: 'Unauthorized: Dispatch or Settings permission required' };
     }
 
-    if (!targetKitchenId) {
-      return { ok: false, error: 'Kitchen not found' };
+    let targetKitchenId = params.kitchenId;
+    if (!targetKitchenId || targetKitchenId === 'default') {
+      targetKitchenId = session.kitchenId === 'ALL' ? session.kitchenIds?.[0] : session.kitchenId;
+    }
+
+    if (!targetKitchenId || (session.kitchenIds && !session.kitchenIds.includes(targetKitchenId))) {
+      return { ok: false, error: 'Kitchen facility not found or access denied' };
     }
 
     const created = await prisma.dispatchCheckRule.create({
@@ -365,6 +422,20 @@ export async function deleteDispatchRuleAction(params: {
   kitchenId?: string;
 }): Promise<ActionResult> {
   try {
+    const session = await getCurrentKitchenContext();
+    if (session.role !== 'owner' && !session.permissions?.includes('packing') && !session.permissions?.includes('settings')) {
+      return { ok: false, error: 'Unauthorized: Dispatch or Settings permission required' };
+    }
+
+    const rule = await prisma.dispatchCheckRule.findUnique({
+      where: { id: params.ruleId },
+      select: { kitchenId: true },
+    });
+
+    if (!rule || (session.kitchenIds && !session.kitchenIds.includes(rule.kitchenId))) {
+      return { ok: false, error: 'Rule not found or unauthorized' };
+    }
+
     await prisma.dispatchCheckRule.delete({
       where: { id: params.ruleId },
     });
@@ -380,17 +451,18 @@ export async function deleteDispatchRuleAction(params: {
 
 export async function resetDispatchRulesAction(kitchenId?: string): Promise<ActionResult<DispatchRuleDTO[]>> {
   try {
-    let targetKitchenId = kitchenId;
-    if (!targetKitchenId) {
-      const defaultKitchen = await prisma.kitchen.findFirst({
-        where: { isActive: true },
-        select: { id: true },
-      });
-      targetKitchenId = defaultKitchen?.id;
+    const session = await getCurrentKitchenContext();
+    if (session.role !== 'owner' && !session.permissions?.includes('packing') && !session.permissions?.includes('settings')) {
+      return { ok: false, error: 'Unauthorized: Dispatch or Settings permission required' };
     }
 
-    if (!targetKitchenId) {
-      return { ok: false, error: 'Kitchen not found' };
+    let targetKitchenId = kitchenId;
+    if (!targetKitchenId || targetKitchenId === 'default') {
+      targetKitchenId = session.kitchenId === 'ALL' ? session.kitchenIds?.[0] : session.kitchenId;
+    }
+
+    if (!targetKitchenId || (session.kitchenIds && !session.kitchenIds.includes(targetKitchenId))) {
+      return { ok: false, error: 'Kitchen facility not found or access denied' };
     }
 
     // Delete current kitchen rules

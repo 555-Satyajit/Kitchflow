@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Image from "next/image"
 import { cn } from "@/lib/utils"
-import { loginWithSupabase } from "@/actions/auth"
+import { loginWithSupabase, loginWithPinAction } from "@/actions/auth"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -35,9 +35,9 @@ export function LoginForm({
   const [authMode, setAuthMode] = useState<"credentials" | "pin">("credentials")
   
   // Form State
-  const [email, setEmail] = useState("admin@biryanicentral.com")
-  const [password, setPassword] = useState("Chef@2026")
-  const [pin, setPin] = useState("1234")
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [pin, setPin] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -84,24 +84,36 @@ export function LoginForm({
 
     try {
       if (authMode === "pin") {
-        const expectedPin = provisionedConfig?.ownerCredentials?.pin || "1234"
-        if (pin.trim() === expectedPin || pin.trim() === "1234" || pin.trim() === "5123") {
-          // If credentials exist in config, authenticate session seamlessly
-          if (provisionedConfig?.ownerCredentials?.email && provisionedConfig?.ownerCredentials?.password) {
+        const pinRes = await loginWithPinAction(pin);
+        if (pinRes.success) {
+          // If credentials exist in config and user is verified owner, authenticate Supabase session
+          if (pinRes.role === 'owner' && provisionedConfig?.ownerCredentials?.email && provisionedConfig?.ownerCredentials?.password) {
             const formData = new FormData()
             formData.set("email", provisionedConfig.ownerCredentials.email)
             formData.set("password", provisionedConfig.ownerCredentials.password)
-            formData.set("redirectTo", "/pos")
+            formData.set("redirectTo", pinRes.redirectTo || "/pos")
             const res = await loginWithSupabase(formData)
             if (res?.error) {
               console.warn("Supabase PIN session fallback:", res.error)
             }
           }
-          router.push("/pos")
-          router.refresh()
+          try {
+            if (pinRes.staffName) {
+              localStorage.setItem('kitchflow_active_staff_name', pinRes.staffName)
+            }
+            if (pinRes.role) {
+              localStorage.setItem('kitchflow_active_staff_role', pinRes.role)
+            }
+            if (pinRes.permissions) {
+              localStorage.setItem('kitchflow_active_staff_permissions', JSON.stringify(pinRes.permissions))
+            }
+          } catch (e) {}
+
+          // Perform hard navigation to ensure session cookies are sent cleanly to middleware
+          window.location.href = pinRes.redirectTo || "/pos"
           return
         } else {
-          setErrorMsg("Invalid POS Terminal PIN. Please enter the master PIN provisioned for this store.")
+          setErrorMsg(pinRes.error || "Invalid POS Terminal PIN. Please enter the master PIN provisioned for this store.")
           setIsLoading(false)
           return
         }
@@ -236,7 +248,7 @@ export function LoginForm({
                         href="#"
                         onClick={(e) => {
                           e.preventDefault()
-                          alert("For self-hosted deployments, verify master keys in /admin/onboard or contact your organization administrator.")
+                          alert("Please contact your organization administrator or master account owner to reset your credentials.")
                         }}
                         className="text-[11px] text-muted-foreground hover:text-primary transition-colors cursor-pointer"
                       >

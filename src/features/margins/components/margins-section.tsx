@@ -2,12 +2,14 @@ import React from 'react';
 import { getMarginsOrders } from '../margins-queries';
 import { MarginsSectionClient } from './margins-section-client';
 import { Skeleton } from '@/components/ui/skeleton';
+import { requirePermission } from '@/lib/session';
 
 interface MarginsSectionProps {
   kitchenId?: string;
 }
 
 export async function MarginsSection({ kitchenId }: MarginsSectionProps) {
+  await requirePermission('margins');
   const orders = await getMarginsOrders(kitchenId);
 
   return <MarginsSectionClient initialOrders={orders} />;

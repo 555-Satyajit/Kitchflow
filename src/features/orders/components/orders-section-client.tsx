@@ -5,7 +5,8 @@ import { OrdersQueueView } from '@/components/orders/OrdersQueueView';
 import { MarginModal } from '@/components/margins/MarginModal';
 import { ManualOrderModal } from '@/components/orders/ManualOrderModal';
 import { useKitchen } from '@/context/KitchenContext';
-import { Order, Brand, MenuItem } from '@/types';
+import { Order, Brand, MenuItem, OrderStatus } from '@/types';
+import { useLiveOrders } from '../hooks/useLiveOrders';
 
 interface OrdersSectionClientProps {
   initialOrders: Order[];
@@ -18,39 +19,38 @@ export function OrdersSectionClient({
   initialOrders,
   initialBrands,
   initialMenuItems,
+  kitchenId,
 }: OrdersSectionClientProps) {
   const {
-    orders,
     brands,
     menuItems,
-    setOrders,
-    setIsOrdersLoaded,
     setBrands,
     setMenuItems,
     userRole,
     setUserRole,
-    handleUpdateStatus,
     inspectingOrder,
     setInspectingOrder,
     handleSimulateNewOrder,
     handleCreateManualOrder,
   } = useKitchen();
 
-  // Sync live database orders and brands from server component into context state
+  const { orders, updateStatus } = useLiveOrders(kitchenId, initialOrders);
+
+  // Sync brands and menu items from server
   React.useEffect(() => {
-    if (initialOrders) {
-      setOrders(initialOrders);
-      setIsOrdersLoaded(true);
-    }
-    if (initialBrands && initialBrands.length > 0) {
+    if (initialBrands) {
       setBrands(initialBrands);
     }
-    if (initialMenuItems && initialMenuItems.length > 0) {
+    if (initialMenuItems) {
       setMenuItems(initialMenuItems);
     }
-  }, [initialOrders, initialBrands, initialMenuItems, setOrders, setIsOrdersLoaded, setBrands, setMenuItems]);
+  }, [initialBrands, initialMenuItems, setBrands, setMenuItems]);
 
   const [isManualOrderOpen, setIsManualOrderOpen] = useState(false);
+
+  const onUpdateStatus = (orderId: string, status: OrderStatus) => {
+    updateStatus({ orderId, status });
+  };
 
   // Guard: Cook station mode
   if (userRole === 'LINE_COOK') {
@@ -104,7 +104,7 @@ export function OrdersSectionClient({
     <>
       <OrdersQueueView
         orders={orders}
-        onUpdateStatus={handleUpdateStatus}
+        onUpdateStatus={onUpdateStatus}
         onInspectFinancials={(o) => setInspectingOrder(o)}
         onSimulateNewOrder={handleSimulateNewOrder}
         onOpenManualOrder={() => setIsManualOrderOpen(true)}

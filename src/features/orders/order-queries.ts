@@ -11,10 +11,15 @@ export async function getOrdersData(kitchenId?: string): Promise<{
 }> {
   try {
     let targetKitchenId = kitchenId;
+    let allowedKitchenIds: string[] = [];
 
     if (!targetKitchenId) {
       const sessionCtx = await getCurrentKitchenContext();
       targetKitchenId = sessionCtx.kitchenId;
+      allowedKitchenIds = sessionCtx.kitchenIds || [];
+    } else if (targetKitchenId === 'ALL') {
+      const sessionCtx = await getCurrentKitchenContext('ALL');
+      allowedKitchenIds = sessionCtx.kitchenIds || [];
     }
 
     if (!targetKitchenId || targetKitchenId === 'default') {
@@ -25,9 +30,26 @@ export async function getOrdersData(kitchenId?: string): Promise<{
       };
     }
 
+    const isAll = targetKitchenId === 'ALL';
+    const kitchenWhere = isAll ? { in: allowedKitchenIds } : targetKitchenId;
+
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
     const [dbOrders, dbBrands, dbMenuItems] = await Promise.all([
       prisma.order.findMany({
-        where: { kitchenId: targetKitchenId },
+        where: { 
+          kitchenId: kitchenWhere,
+          OR: [
+            // Active line cooking & dispatch queue (always live)
+            { status: { in: ['RECEIVED', 'ACCEPTED', 'PREPARING', 'READY'] } },
+            // Dispatched & cancelled orders from today's operational shift
+            {
+              status: { in: ['DISPATCHED', 'CANCELLED'] },
+              createdAt: { gte: startOfToday },
+            },
+          ],
+        },
         include: {
           brand: true,
           items: true,
@@ -35,11 +57,11 @@ export async function getOrdersData(kitchenId?: string): Promise<{
         orderBy: { createdAt: 'desc' },
       }),
       prisma.brand.findMany({
-        where: { kitchenId: targetKitchenId },
+        where: { kitchenId: kitchenWhere },
         orderBy: { name: 'asc' },
       }),
       prisma.menuItem.findMany({
-        where: { brand: { kitchenId: targetKitchenId } },
+        where: { brand: { kitchenId: kitchenWhere } },
         include: {
           recipe: {
             include: { ingredient: true },
@@ -132,7 +154,10 @@ export async function getOrdersData(kitchenId?: string): Promise<{
       brands: mappedBrands,
       menuItems: mappedMenuItems,
     };
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.digest === 'HANGING_PROMISE_REJECTION' || error?.digest === 'NEXT_PRERENDER_SIGNAL') {
+      throw error;
+    }
     console.error('Error in getOrdersData, returning empty queue:', error);
     return {
       orders: [],

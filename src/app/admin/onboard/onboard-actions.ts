@@ -6,6 +6,7 @@ import { inventoryTags } from '@/features/inventory/inventory-cache';
 import { orderTags } from '@/features/orders/order-cache';
 
 export interface ProvisionKitchenInput {
+  accessKey?: string;
   name: string;
   address?: string;
   phone?: string;
@@ -43,8 +44,24 @@ export interface ProvisionResult {
   error?: string;
 }
 
+export async function verifyAdminAccessKeyAction(key: string): Promise<{ ok: boolean }> {
+  const expectedKey = process.env.INTERNAL_OPS_KEY || (process.env.NODE_ENV !== 'production' ? 'kitchflow2026' : null);
+  if (!expectedKey) {
+    return { ok: false };
+  }
+  return { ok: key.trim() === expectedKey };
+}
+
 export async function provisionKitchenAction(data: ProvisionKitchenInput): Promise<ProvisionResult> {
   try {
+    const expectedKey = process.env.INTERNAL_OPS_KEY || (process.env.NODE_ENV !== 'production' ? 'kitchflow2026' : null);
+    if (!expectedKey || !data.accessKey || data.accessKey.trim() !== expectedKey) {
+      return {
+        ok: false,
+        error: 'Unauthorized: Invalid or missing administrator access key.',
+      };
+    }
+
     const slug = data.name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
@@ -68,12 +85,19 @@ export async function provisionKitchenAction(data: ProvisionKitchenInput): Promi
         });
       }
 
-      // 2. Create physical Kitchen facility
+      // 2. Create physical Kitchen facility with all collected onboarding data
       const kitchen = await tx.kitchen.create({
         data: {
           organizationId: org.id,
           name: data.name,
           address: data.address || null,
+          phone: data.phone || null,
+          email: data.ownerCredentials?.email || null,
+          gstin: data.gstin || null,
+          fssaiLic: data.fssaiLic || null,
+          gstRate: data.gstRate !== undefined ? Number(data.gstRate) : 5.0,
+          thermalRollSize: data.thermalRollSize || '80mm',
+          invoiceTerms: 'Food once sold cannot be returned or exchanged.',
           timezone: 'Asia/Kolkata',
           currency: 'INR',
           isActive: true,
@@ -180,9 +204,13 @@ export async function provisionKitchenAction(data: ProvisionKitchenInput): Promi
                 organizationId: result.organizationId,
                 userId: userId,
                 role: 'owner',
+                name: data.ownerCredentials.name,
+                pin: data.ownerCredentials.pin,
               },
               update: {
                 role: 'owner',
+                name: data.ownerCredentials.name,
+                pin: data.ownerCredentials.pin,
               },
             });
           }

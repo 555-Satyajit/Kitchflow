@@ -2,9 +2,10 @@ import React from "react";
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import { QueryProvider } from "@/providers/query-provider";
 import { KitchenProvider } from "@/context/KitchenContext";
-import { AppHeader } from "@/components/mobile/AppHeader";
-import { NavigationBar } from "@/components/mobile/NavigationBar";
+import { AppHeaderServer } from "@/components/mobile/app-header-server";
+import { NavigationBarServer } from "@/components/mobile/navigation-bar-server";
 import { ServiceWorkerRegister } from "@/components/pwa/ServiceWorkerRegister";
 
 const inter = Inter({
@@ -20,7 +21,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "KitchFlow — Cloud Kitchen Operating System",
+  title: "KitchFlow • Cloud Kitchen Operating System",
   description: "Real-time operating system for multi-brand Indian cloud kitchens",
   manifest: "/manifest.json",
   icons: {
@@ -54,18 +55,20 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
       <body className="min-h-screen bg-background text-foreground antialiased font-sans">
-        <KitchenProvider>
-          <React.Suspense fallback={<div className="h-14 border-b border-border bg-background" />}>
-            <AppHeader />
-          </React.Suspense>
-          <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-8">
-            {children}
-          </main>
-          <React.Suspense fallback={null}>
-            <NavigationBar />
-          </React.Suspense>
-          <ServiceWorkerRegister />
-        </KitchenProvider>
+        <QueryProvider>
+          <KitchenProvider>
+            <React.Suspense fallback={<div className="h-14 border-b border-border bg-background" />}>
+              <AppHeaderServer />
+            </React.Suspense>
+            <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-8">
+              {children}
+            </main>
+            <React.Suspense fallback={null}>
+              <NavigationBarServer />
+            </React.Suspense>
+            <ServiceWorkerRegister />
+          </KitchenProvider>
+        </QueryProvider>
       </body>
     </html>
   );

@@ -12,15 +12,57 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useKitchen } from '@/context/KitchenContext'
-import { Badge } from '@/components/ui/badge'
+import { useNavCounts } from '@/hooks/useNavCounts'
+import { useOutlets } from '@/hooks/useOutlets'
+import { NavCountsResult } from '@/features/orders/order-actions'
 
-export function NavigationBar() {
+export interface NavigationBarProps {
+  initialRole?: 'owner' | 'manager' | 'kitchen_staff';
+  initialPermissions?: string[];
+  initialNavCounts?: NavCountsResult;
+}
+
+export function NavigationBar({
+  initialRole,
+  initialPermissions,
+  initialNavCounts,
+}: NavigationBarProps = {}) {
   const pathname = usePathname()
   const [mounted, setMounted] = useState(false)
-  const { orders, isOrdersLoaded, navCounts, ingredients, userRole } = useKitchen()
+  const { orders, isOrdersLoaded, navCounts, ingredients } = useKitchen()
+
+  const { activeOutletId } = useOutlets()
+
+  const [profileRole, setProfileRole] = useState<'owner' | 'manager' | 'kitchen_staff'>(
+    initialRole || 'owner'
+  )
+  const [userPermissions, setUserPermissions] = useState<string[]>(
+    initialPermissions || ['orders', 'pos', 'kds', 'packing', 'inventory', 'procurement', 'margins', 'settings']
+  )
+
+  // TanStack Query authoritative real-time nav counts synced with activeOutletId
+  const { data: tanstackCounts } = useNavCounts(activeOutletId, initialNavCounts || navCounts)
 
   useEffect(() => {
     setMounted(true)
+
+    try {
+      const activeStaffRole = localStorage.getItem('kitchflow_active_staff_role')
+      const activeStaffPerms = localStorage.getItem('kitchflow_active_staff_permissions')
+
+      if (activeStaffRole) {
+        setProfileRole(activeStaffRole as any)
+      }
+
+      if (activeStaffPerms) {
+        try {
+          const parsed = JSON.parse(activeStaffPerms)
+          if (Array.isArray(parsed)) {
+            setUserPermissions(parsed)
+          }
+        } catch {}
+      }
+    } catch (e) {}
   }, [])
 
   // Completely isolate public customer invoice pages, auth pages, and internal team onboarding portal
@@ -33,47 +75,59 @@ export function NavigationBar() {
     return null
   }
 
-  // Dual-source conditional evaluation:
-  // If active page has populated context orders, derive dynamic filtered counts.
-  // Otherwise, fall back directly to authoritative recovery navCounts from PostgreSQL.
-  const liveOrderCount = orders.length > 0 ? orders.length : (navCounts?.ordersCount ?? 0)
-  const kdsPendingCount = orders.length > 0 
-    ? orders.filter((o) => o.status === 'ACCEPTED' || o.status === 'PREPARING').length
-    : (navCounts?.kdsCount ?? 0)
-  const packingPendingCount = orders.length > 0
-    ? orders.filter((o) => o.status === 'PREPARING' || o.status === 'READY').length
-    : (navCounts?.packingCount ?? 0)
+  // Authoritative server badge counts with TanStack Query primary source and in-memory fallback
+  const authoritativeCounts = tanstackCounts || initialNavCounts || navCounts
+  const liveOrderCount = authoritativeCounts ? authoritativeCounts.ordersCount : orders.length
+  const kdsPendingCount = authoritativeCounts 
+    ? authoritativeCounts.kdsCount 
+    : orders.filter((o) => o.status === 'ACCEPTED' || o.status === 'PREPARING').length
+  const packingPendingCount = authoritativeCounts 
+    ? authoritativeCounts.packingCount 
+    : orders.filter((o) => o.status === 'PREPARING' || o.status === 'READY').length
   const lowStockCount = ingredients.filter((i) => i.currentStock <= i.minThreshold).length
 
-  const isNavReady = mounted && (isOrdersLoaded || navCounts !== null)
+  const isNavReady = isOrdersLoaded || orders.length > 0 || authoritativeCounts !== null
 
   interface NavTab {
     href: string
+    permission: string
     label: string
     icon: React.ComponentType<{ className?: string }>
     badge?: number
     isDynamic?: boolean
-    roleRequired?: string
   }
 
   const rawTabs: NavTab[] = [
-    { href: '/orders', label: 'Live Queue', icon: ClipboardList, badge: liveOrderCount, isDynamic: true, roleRequired: 'OWNER' },
-    { href: '/kds', label: 'KDS Cook', icon: Flame, badge: kdsPendingCount, isDynamic: true },
-    { href: '/packing', label: 'Dispatch', icon: PackageCheck, badge: packingPendingCount, isDynamic: true },
-    { href: '/inventory', label: 'Inventory', icon: Boxes, badge: lowStockCount, isDynamic: false, roleRequired: 'OWNER' },
-    { href: '/margins', label: 'Margins', icon: TrendingUp, isDynamic: false, roleRequired: 'OWNER' },
+    { href: '/orders', permission: 'orders', label: 'Live Queue', icon: ClipboardList, badge: liveOrderCount, isDynamic: true },
+    { href: '/kds', permission: 'kds', label: 'KDS Cook', icon: Flame, badge: kdsPendingCount, isDynamic: true },
+    { href: '/packing', permission: 'packing', label: 'Dispatch', icon: PackageCheck, badge: packingPendingCount, isDynamic: true },
+    { href: '/inventory', permission: 'inventory', label: 'Inventory', icon: Boxes, badge: lowStockCount, isDynamic: false },
+    { href: '/margins', permission: 'margins', label: 'Margins', icon: TrendingUp, isDynamic: false },
   ]
 
-  // Filter tabs by userRole only after mount to prevent SSR/client hydration differences if userRole differs
-  const effectiveRole = mounted ? userRole : 'OWNER'
-  const tabs = rawTabs.filter((t) => !t.roleRequired || t.roleRequired === effectiveRole)
+  // Filter tabs dynamically by staff permissions or owner bypass
+  const tabs = rawTabs.filter((t) => {
+    if (profileRole === 'owner') return true
+    return userPermissions.includes(t.permission)
+  })
 
   if (pathname === '/login') return null
 
   return (
     /* Visible on mobile, tablets, and iPads. Hidden on laptops & desktops (lg:hidden) */
-    <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-background/85 backdrop-blur-xl border-t border-border/60 px-3 sm:px-6 pt-1.5 pb-[max(0.6rem,env(safe-area-inset-bottom))] shadow-xs">
-      <div className="max-w-md mx-auto grid grid-cols-5 gap-0.5">
+    <nav 
+      suppressHydrationWarning
+      className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-background/85 backdrop-blur-xl border-t border-border/60 px-3 sm:px-6 pt-1.5 pb-[max(0.6rem,env(safe-area-inset-bottom))] shadow-xs"
+    >
+      <div 
+        className={cn(
+          "max-w-md mx-auto grid gap-0.5",
+          tabs.length === 5 ? "grid-cols-5" :
+          tabs.length === 4 ? "grid-cols-4" :
+          tabs.length === 3 ? "grid-cols-3" :
+          tabs.length === 2 ? "grid-cols-2" : "grid-cols-1"
+        )}
+      >
         {tabs.map((tab) => {
           const Icon = tab.icon
           const isActive = pathname === tab.href || (pathname === '/' && tab.href === '/orders')
@@ -91,12 +145,10 @@ export function NavigationBar() {
             >
               <div className="relative flex items-center justify-center">
                 <Icon className={cn("w-5 h-5 transition-transform duration-150", isActive ? "stroke-[2.4] scale-105" : "stroke-[1.8]")} />
-                {tab.isDynamic && !isNavReady ? (
-                  <span className="absolute -top-1 -right-2.5 h-3.5 w-4 rounded-full bg-muted animate-pulse" />
-                ) : Boolean(tab.badge && tab.badge > 0) ? (
+                {mounted && Boolean(tab.badge && tab.badge > 0) ? (
                   <span 
                     className={cn(
-                      "absolute -top-1 -right-2.5 h-4 min-w-[16px] px-1 text-[9px] font-mono leading-none flex items-center justify-center rounded-full font-bold shadow-2xs transition-transform animate-in fade-in duration-200",
+                      "absolute -top-1 -right-2.5 h-4 min-w-[16px] px-1 text-[9px] font-mono leading-none flex items-center justify-center rounded-full font-bold shadow-2xs transition-transform animate-in fade-in duration-150",
                       isActive 
                         ? "bg-primary text-primary-foreground" 
                         : "bg-muted-foreground/30 text-foreground"
@@ -107,8 +159,8 @@ export function NavigationBar() {
                 ) : null}
               </div>
               <span className={cn(
-                "text-[10px] mt-1 tracking-tight leading-none transition-colors",
-                isActive ? "font-bold text-primary" : "font-medium text-muted-foreground"
+                "text-[10px] mt-1 font-medium tracking-tight truncate max-w-[64px]",
+                isActive ? "font-bold text-primary" : "text-muted-foreground"
               )}>
                 {tab.label}
               </span>

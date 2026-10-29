@@ -26,6 +26,11 @@ export interface Brand {
   tagline: string;
   color: string;
   logoUrl?: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  fssaiLic?: string;
+  invoiceTerms?: string;
   active: boolean;
 }
 
@@ -174,6 +179,7 @@ export interface Order {
   customerName: string;
   customerPhone?: string;
   customerAddress?: string;
+  couponCode?: string;
   status: OrderStatus;
   paymentMethod?: PaymentMethod;
   paymentStatus?: PaymentStatus;
@@ -191,3 +197,29 @@ export interface Order {
 
 export type UserRole = 'OWNER' | 'KITCHEN_MANAGER' | 'LINE_COOK';
 export type KitchenLanguage = 'EN' | 'HI';
+
+export type StaffPermission =
+  | 'orders'      // View & accept incoming orders
+  | 'pos'         // Punch manual counter walk-in tickets
+  | 'kds'         // Cook stations & bump bars
+  | 'packing'     // Packing QA & rider dispatch
+  | 'inventory'   // Inventory stock tracking
+  | 'procurement' // PO generation & wastage logging
+  | 'margins'     // Profit & loss analytics
+  | 'settings'    // Outlet, brand, and staff configuration
+  | 'history'     // Past shift order history & reprint receipts
+  | 'customers';  // Customer directory & CRM loyalty
+
+export interface StaffMember {
+  id: string;
+  userId: string;
+  name: string | null;
+  role: string;
+  customRole: string | null;
+  permissions: StaffPermission[];
+  kitchenId: string | null;
+  kitchenName?: string | null;
+  pin: string | null;
+  allowedBrands: string[];
+  createdAt: string;
+}

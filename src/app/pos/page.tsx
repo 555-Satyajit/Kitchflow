@@ -34,7 +34,8 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { BillReceiptModal } from '@/components/pos/BillReceiptModal'
 import { createManualOrderAction, searchCustomersAction } from '@/features/orders/order-actions'
-import { createClient } from '@/lib/supabase/client'
+import { broadcastKitchenEvent } from '@/lib/supabase/realtime-bus'
+import { getDeviceUuid } from '@/lib/utils'
 
 export default function POSPage() {
   const router = useRouter()
@@ -53,6 +54,21 @@ export default function POSPage() {
   const [customerSuggestions, setCustomerSuggestions] = useState<Array<{ name: string; phone: string; address?: string }>>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [isCartOpen, setIsCartOpen] = useState(false)
+
+  // Enforce POS permission guard on client for non-owners
+  React.useEffect(() => {
+    try {
+      const activeRole = localStorage.getItem('kitchflow_active_staff_role')
+      const activePerms = localStorage.getItem('kitchflow_active_staff_permissions')
+      if (activeRole && activeRole !== 'owner' && activePerms) {
+        const perms = JSON.parse(activePerms)
+        if (Array.isArray(perms) && !perms.includes('pos')) {
+          const fallback = ['orders', 'kds', 'packing', 'inventory'].find((p) => perms.includes(p)) || 'orders'
+          router.replace(`/${fallback}`)
+        }
+      }
+    } catch {}
+  }, [router])
 
   // Billing & Payment States
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('CASH')
@@ -257,14 +273,43 @@ export default function POSPage() {
         orderNumber: actualOrderNumber,
       }
 
-      // 3. Supabase Realtime WebSocket broadcast (sub-10ms KDS sync without DB WAL bottlenecks)
+      // 3. Supabase Realtime WebSocket broadcast (sub-10ms KDS, Orders & Counters sync)
       try {
-        const supabase = createClient()
-        const channelRef = supabase.channel('kitchen-global-kds')
-        channelRef.send({
-          type: 'broadcast',
-          event: 'order_status_changed',
-          payload: { orderId: actualOrderId, status: 'PREPARING' },
+        const kid = typeof window !== 'undefined' ? localStorage.getItem('kitchflow_active_kitchen_id') || 'default' : 'default'
+        const senderId = getDeviceUuid()
+
+        // 1. Broadcast to Live Orders Queue (/orders)
+        broadcastKitchenEvent(`kitchen-${kid}-orders`, 'new_order_placed', {
+          order: finalOrder,
+          orderId: actualOrderId,
+          senderId,
+        })
+        broadcastKitchenEvent('kitchen-all-orders', 'new_order_placed', {
+          order: finalOrder,
+          orderId: actualOrderId,
+          senderId,
+        })
+
+        // 2. Broadcast to KDS stations (/kds)
+        broadcastKitchenEvent(`kitchen-${kid}-kds`, 'new_order_placed', {
+          order: finalOrder,
+          orderId: actualOrderId,
+          status: 'PREPARING',
+          senderId,
+        })
+        broadcastKitchenEvent('kitchen-global-kds', 'new_order_placed', {
+          order: finalOrder,
+          orderId: actualOrderId,
+          status: 'PREPARING',
+          senderId,
+        })
+
+        // 3. Broadcast nav counter delta to all terminals (<10ms instant badge increment)
+        const counterChannel = kid && kid !== 'default' ? `kitchen-${kid}-counters` : 'kitchen-all-counters'
+        broadcastKitchenEvent(counterChannel, 'nav_counter_delta', {
+          action: { type: 'ORDER_PUNCHED' },
+          eventId: `ORDER_PUNCHED-${actualOrderId}`,
+          senderId,
         })
       } catch (realtimeErr) {
         console.warn('POS Realtime broadcast non-critical failure:', realtimeErr)

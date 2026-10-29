@@ -1,8 +1,10 @@
 'use server';
 
 import { prisma } from '@/lib/prisma';
-import { revalidateTag } from 'next/cache';
+import { revalidateTag, revalidatePath } from 'next/cache';
 import { kdsTags } from './kds-cache';
+import { packingTags } from '@/features/packing/packing-cache';
+import { orderTags } from '@/features/orders/order-cache';
 
 export type ActionResult<T = void> = 
   | { ok: true; data?: T }
@@ -16,6 +18,11 @@ export async function toggleStationItemAction(params: {
   clientVersion?: number;
 }): Promise<ActionResult<{ isDone: boolean; version: number }>> {
   try {
+    const session = await getCurrentKitchenContext();
+    if (session.role !== 'owner' && !session.permissions?.includes('kds')) {
+      return { ok: false, error: 'Unauthorized: KDS Cook permission required' };
+    }
+
     const { orderId, itemId, kitchenId, targetDone, clientVersion } = params;
 
     const item = await prisma.orderItem.findFirst({
@@ -54,29 +61,11 @@ export async function toggleStationItemAction(params: {
       select: { id: true, stationDone: true, version: true },
     });
 
-    // Check if all items in this order are now done
-    const remainingUndone = await prisma.orderItem.count({
-      where: {
-        orderId,
-        stationDone: false,
-      },
+    // If order was ACCEPTED, advance it to PREPARING now that line cooking is in progress
+    await prisma.order.updateMany({
+      where: { id: orderId, status: 'ACCEPTED' },
+      data: { status: 'PREPARING' },
     });
-
-    if (remainingUndone === 0) {
-      await prisma.order.update({
-        where: { id: orderId },
-        data: {
-          status: 'READY',
-          readyAt: new Date(),
-        },
-      });
-    } else {
-      // If order was ACCEPTED, advance it to PREPARING now that line cooking is in progress
-      await prisma.order.updateMany({
-        where: { id: orderId, status: 'ACCEPTED' },
-        data: { status: 'PREPARING' },
-      });
-    }
 
     if (kitchenId) {
       revalidateTag(kdsTags.kitchen(kitchenId), 'max');
@@ -101,6 +90,11 @@ export async function markOrderReadyAction(params: {
   kitchenId?: string;
 }): Promise<ActionResult> {
   try {
+    const session = await getCurrentKitchenContext();
+    if (session.role !== 'owner' && !session.permissions?.includes('kds')) {
+      return { ok: false, error: 'Unauthorized: KDS Cook permission required' };
+    }
+
     const { orderId, kitchenId } = params;
 
     await prisma.order.update({
@@ -113,7 +107,18 @@ export async function markOrderReadyAction(params: {
 
     if (kitchenId) {
       revalidateTag(kdsTags.kitchen(kitchenId), 'max');
+      revalidateTag(packingTags.kitchen(kitchenId), 'max');
+      revalidateTag(orderTags.kitchen(kitchenId), 'max');
     }
+    revalidateTag(kdsTags.all, 'max');
+    revalidateTag(packingTags.all, 'max');
+    revalidateTag(orderTags.all, 'max');
+
+    try {
+      revalidatePath('/packing');
+      revalidatePath('/kds');
+      revalidatePath('/orders');
+    } catch {}
 
     return { ok: true };
   } catch (error) {
@@ -123,23 +128,33 @@ export async function markOrderReadyAction(params: {
   }
 }
 
+import { getCurrentKitchenContext } from '@/lib/session';
+
 export async function fetchKdsOrdersClientAction(kitchenId?: string) {
   try {
     let targetKitchenId = kitchenId;
+    let allowedKitchenIds: string[] = [];
+
     if (!targetKitchenId) {
-      const defaultKitchen = await prisma.kitchen.findFirst({
-        where: { isActive: true },
-        select: { id: true },
-      });
-      targetKitchenId = defaultKitchen?.id;
+      const sessionCtx = await getCurrentKitchenContext();
+      targetKitchenId = sessionCtx.kitchenId;
+      allowedKitchenIds = sessionCtx.kitchenIds || [];
+    } else if (targetKitchenId === 'ALL') {
+      const sessionCtx = await getCurrentKitchenContext('ALL');
+      allowedKitchenIds = sessionCtx.kitchenIds || [];
     }
 
-    if (!targetKitchenId) return [];
+    if (!targetKitchenId || targetKitchenId === 'default') {
+      return [];
+    }
+
+    const isAll = targetKitchenId === 'ALL';
+    const kitchenWhere = isAll ? { in: allowedKitchenIds } : targetKitchenId;
 
     const dbOrders = await prisma.order.findMany({
       where: {
-        kitchenId: targetKitchenId,
-        status: { notIn: ['DISPATCHED', 'CANCELLED'] },
+        kitchenId: kitchenWhere,
+        status: { in: ['ACCEPTED', 'PREPARING'] },
       },
       include: {
         brand: true,

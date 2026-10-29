@@ -20,9 +20,15 @@ export async function getInventoryData(kitchenId?: string): Promise<{
 }> {
   try {
     let targetKitchenId = kitchenId;
+    let allowedKitchenIds: string[] = [];
+
     if (!targetKitchenId) {
       const sessionCtx = await getCurrentKitchenContext();
       targetKitchenId = sessionCtx.kitchenId;
+      allowedKitchenIds = sessionCtx.kitchenIds || [];
+    } else if (targetKitchenId === 'ALL') {
+      const sessionCtx = await getCurrentKitchenContext('ALL');
+      allowedKitchenIds = sessionCtx.kitchenIds || [];
     }
 
     if (!targetKitchenId || targetKitchenId === 'default') {
@@ -35,13 +41,16 @@ export async function getInventoryData(kitchenId?: string): Promise<{
       };
     }
 
+    const isAll = targetKitchenId === 'ALL';
+    const kitchenWhere = isAll ? { in: allowedKitchenIds } : targetKitchenId;
+
     const [dbIngredients, dbMenuItems, dbBrands, dbLedger, dbPurchaseOrders] = await Promise.all([
       prisma.ingredient.findMany({
-        where: { kitchenId: targetKitchenId },
+        where: { kitchenId: kitchenWhere },
         orderBy: { name: 'asc' },
       }),
       prisma.menuItem.findMany({
-        where: { brand: { kitchenId: targetKitchenId } },
+        where: { brand: { kitchenId: kitchenWhere } },
         include: {
           recipe: {
             include: { ingredient: true }
@@ -50,17 +59,17 @@ export async function getInventoryData(kitchenId?: string): Promise<{
         orderBy: { name: 'asc' },
       }),
       prisma.brand.findMany({
-        where: { kitchenId: targetKitchenId },
+        where: { kitchenId: kitchenWhere },
         orderBy: { name: 'asc' },
       }),
       prisma.stockLedgerEntry.findMany({
-        where: { ingredient: { kitchenId: targetKitchenId } },
+        where: { ingredient: { kitchenId: kitchenWhere } },
         include: { ingredient: true },
         orderBy: { createdAt: 'desc' },
         take: 100,
       }),
       prisma.purchaseOrder.findMany({
-        where: { kitchenId: targetKitchenId },
+        where: { kitchenId: kitchenWhere },
         include: { items: true },
         orderBy: { createdAt: 'desc' },
       }),
@@ -148,7 +157,10 @@ export async function getInventoryData(kitchenId?: string): Promise<{
         })),
       })),
     };
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.digest === 'HANGING_PROMISE_REJECTION' || error?.digest === 'NEXT_PRERENDER_SIGNAL') {
+      throw error;
+    }
     console.error('Error in getInventoryData, returning clean empty state:', error);
     return {
       ingredients: [],

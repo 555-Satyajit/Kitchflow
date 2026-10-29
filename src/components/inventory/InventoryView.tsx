@@ -35,6 +35,7 @@ import {
 } from 'lucide-react'
 import { estimateRecipeBOM, AIBOMSuggestion } from '@/lib/aiBOMEstimator'
 import { Card } from '@/components/ui/card'
+import { StockLedgerTanStackTable } from './StockLedgerTanStackTable'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -2375,7 +2376,7 @@ export function InventoryView({
               </div>
             )}
 
-            {/* Tab 3: Stock Audit Ledger (Apple HIG Inset Table) */}
+            {/* Tab 3: TanStack Table Powered Stock Ledger & Variance Audit Trail */}
             {activeTab === 'LEDGER' && (
               <Card className="p-4 sm:p-5 rounded-2xl border-border/80 bg-card/90 backdrop-blur-md shadow-xs space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/70 pb-3">
@@ -2390,116 +2391,10 @@ export function InventoryView({
                       Deductions, recipe prep consumption, spoilage, and supplier purchase history
                     </p>
                   </div>
-                  <div className="flex items-center gap-2 self-start sm:self-auto">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        if (stockLedger.length === 0) return
-                        const headers = ['Timestamp', 'Ingredient', 'Reason Code', 'Previous Stock', 'Change Delta', 'New Stock', 'Unit', 'Audit Note']
-                        const rows = stockLedger.map((e) => [
-                          `"${new Date(e.timestamp).toLocaleString('en-IN')}"`,
-                          `"${e.ingredientName.replace(/"/g, '""')}"`,
-                          `"${e.reason}"`,
-                          e.previousStock,
-                          e.delta,
-                          e.newStock,
-                          `"${e.unit}"`,
-                          `"${(e.note || '').replace(/"/g, '""')}"`
-                        ])
-                        const csv = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
-                        const link = document.createElement('a')
-                        link.setAttribute('href', encodeURI(csv))
-                        link.setAttribute('download', `KitchFlow_Stock_Ledger_${new Date().toISOString().slice(0, 10)}.csv`)
-                        document.body.appendChild(link)
-                        link.click()
-                        document.body.removeChild(link)
-                      }}
-                      className="h-9 px-3 text-xs font-semibold rounded-xl gap-1.5 border-border/80 bg-background/80 hover:bg-muted active:scale-[0.98] transition-all cursor-pointer shadow-2xs"
-                    >
-                      <Download className="w-3.5 h-3.5 text-muted-foreground" />
-                      <span>Export CSV</span>
-                    </Button>
-                    <Badge variant="outline" className="font-mono text-[11px] h-9 px-2.5 rounded-xl border-border/80 bg-muted/40">
-                      {stockLedger.length} Events
-                    </Badge>
-                  </div>
                 </div>
 
-                {/* Mobile Swipe Guidance Banner */}
-                <div className="sm:hidden px-3.5 py-1.5 rounded-xl bg-muted/40 border border-border/60 flex items-center justify-between text-[10px] text-muted-foreground font-mono">
-                  <span>Swipe horizontally to view full audit columns</span>
-                  <span className="text-primary font-bold">Scroll &rarr;</span>
-                </div>
-
-                {/* Responsive Table Wrapper */}
-                <div className="overflow-x-auto rounded-xl border border-border/70 bg-background/50">
-                  <div className="inline-block min-w-full align-middle">
-                    <table className="min-w-[640px] w-full text-left text-xs divide-y divide-border/60">
-                      <thead className="bg-muted/50 text-[10px] font-bold text-muted-foreground uppercase tracking-wider font-mono">
-                        <tr>
-                          <th scope="col" className="py-3 px-3.5 w-[100px]">Time</th>
-                          <th scope="col" className="py-3 px-3.5 w-[160px]">Ingredient</th>
-                          <th scope="col" className="py-3 px-3.5 w-[160px]">Reason Code</th>
-                          <th scope="col" className="py-3 px-3 text-right w-[100px]">Change</th>
-                          <th scope="col" className="py-3 px-3.5 text-right w-[100px]">Stock</th>
-                          <th scope="col" className="py-3 px-3.5">Audit Note</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border/50 font-mono">
-                        {stockLedger.length === 0 ? (
-                          <tr>
-                            <td colSpan={6} className="py-12 text-center text-muted-foreground text-xs font-sans">
-                              <p className="font-semibold text-foreground">No ledger events recorded yet</p>
-                              <p className="text-[11px] text-muted-foreground mt-0.5">Adjust stock or fulfill purchase orders to create audit entries.</p>
-                            </td>
-                          </tr>
-                        ) : (
-                          stockLedger.map((entry, idx) => {
-                            const isDeduction = entry.delta < 0
-                            const isPurchase = entry.reason === 'PURCHASE_INFLOW'
-
-                            return (
-                              <tr key={entry.id ? `${entry.id}-${idx}` : `ledger-${idx}`} className="hover:bg-muted/30 transition-colors">
-                                <td className="py-3 px-3.5 text-muted-foreground text-[11px] whitespace-nowrap">
-                                  {new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                </td>
-                                <td className="py-3 px-3.5 font-bold text-foreground text-xs whitespace-nowrap">
-                                  {entry.ingredientName}
-                                </td>
-                                <td className="py-3 px-3.5 whitespace-nowrap">
-                                  <Badge
-                                    className={cn(
-                                      "text-[10px] font-medium font-sans uppercase px-2 py-0.5 rounded-full border whitespace-nowrap",
-                                      entry.reason === 'WASTAGE_SPOILAGE'
-                                        ? "bg-destructive/15 text-destructive border-destructive/30"
-                                        : isPurchase
-                                          ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30"
-                                          : "bg-muted text-muted-foreground border-border/80"
-                                    )}
-                                  >
-                                    {entry.reason.replace(/_/g, ' ')}
-                                  </Badge>
-                                </td>
-                                <td className="py-3 px-3 text-right font-bold whitespace-nowrap">
-                                  <span className={isDeduction ? "text-destructive" : "text-emerald-600 dark:text-emerald-400"}>
-                                    {entry.delta > 0 ? `+${entry.delta}` : entry.delta} {entry.unit}
-                                  </span>
-                                </td>
-                                <td className="py-3 px-3.5 text-right text-foreground font-bold whitespace-nowrap">
-                                  {entry.newStock} {entry.unit}
-                                </td>
-                                <td className="py-3 px-3.5 text-muted-foreground font-sans text-xs min-w-[140px]">
-                                  {entry.note || 'Manual line adjustment'}
-                                </td>
-                              </tr>
-                            )
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+                {/* TanStack Table Component */}
+                <StockLedgerTanStackTable stockLedger={stockLedger} />
               </Card>
             )}
           </>

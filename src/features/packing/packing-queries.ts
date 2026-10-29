@@ -8,19 +8,27 @@ import { getCurrentKitchenContext } from '@/lib/session';
 export async function getPackingOrders(kitchenId?: string): Promise<Order[]> {
   try {
     let targetKitchenId = kitchenId;
+    let allowedKitchenIds: string[] = [];
 
     if (!targetKitchenId) {
       const sessionCtx = await getCurrentKitchenContext();
       targetKitchenId = sessionCtx.kitchenId;
+      allowedKitchenIds = sessionCtx.kitchenIds || [];
+    } else if (targetKitchenId === 'ALL') {
+      const sessionCtx = await getCurrentKitchenContext('ALL');
+      allowedKitchenIds = sessionCtx.kitchenIds || [];
     }
 
     if (!targetKitchenId || targetKitchenId === 'default') {
       return [];
     }
 
+    const isAll = targetKitchenId === 'ALL';
+    const kitchenWhere = isAll ? { in: allowedKitchenIds } : targetKitchenId;
+
     const dbOrders = await prisma.order.findMany({
       where: {
-        kitchenId: targetKitchenId,
+        kitchenId: kitchenWhere,
         status: { in: ['PREPARING', 'READY'] },
       },
       include: {
@@ -81,7 +89,10 @@ export async function getPackingOrders(kitchenId?: string): Promise<Order[]> {
     }
 
     return [];
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.digest === 'HANGING_PROMISE_REJECTION' || error?.digest === 'NEXT_PRERENDER_SIGNAL') {
+      throw error;
+    }
     console.error('Error in getPackingOrders, returning empty list:', error);
     return [];
   }

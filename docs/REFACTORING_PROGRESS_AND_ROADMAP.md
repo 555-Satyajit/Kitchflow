@@ -188,7 +188,29 @@ All refactored domains and database schemas have been verified through automated
    - **Zero-Bleed Perimeter**: Removed all global fallback queries (`findFirst({ where: { isActive: true } })`). If session validation or tenant ownership fails, typed domain exceptions (`AuthenticationRequiredError`, `KitchenNotFoundError`) are thrown.
    - **Next.js 16 PPR Compatibility**: Integrated `await connection()` from `next/server` at the beginning of the context resolver so Next.js Partial Prerendering streams dynamic request-time tenant data inside `<Suspense>` boundaries without failing prerender builds.
    - **Root Error Boundary**: Implemented `src/app/error.tsx` catching auth exceptions with seamless client-side redirects to `/login?redirectTo=...`, rendering Apple HIG store setup states for unconfigured facilities, and providing native `reset()` reconnection triggers without leaking internal URLs.
-   - **Production Build Status**: Verified with `pnpm exec tsc --noEmit` and `pnpm run build` (all 14 routes compiled with exit code 0).
+6. **Single-Pass Render Decoupling & Instant Badge Hydration**:
+   - **Elimination of Component-Level Context Mutation**: Replaced the synchronous `setOrders` / `useLayoutEffect` context seeding anti-pattern in `orders-section-client.tsx` with decoupled `useState(initialOrders)` local state. This ensures true single-pass rendering without double-render penalties or React 19 Concurrent Mode state tearing.
+   - **Persistent 0ms Badge Hydration**: Integrated local cache hydration from `kitchflow_nav_counts_cache` in `KitchenContext` so badges render instantaneously (0ms) upon mount without waiting for network round-trips.
+   - **Layout Stability & Zero-Mismatch Badges**: Removed pulsing skeleton pills that previously caused layout jumps and replaced them with notification-counter badges (`{mounted && badge > 0 ? <Badge>{badge}</Badge> : null}`). Ensured the mobile `NavigationBar` renders its structure unconditionally, preventing bottom-bar disappearance during count resolution.
+   - **Production Build Status**: Verified with `pnpm exec tsc --noEmit` and `npx next build` (all 15 routes compiled with exit code 0).
+7. **Production Scale Hardening & Race Condition Prevention**:
+   - **Optimized RLS Helper (`has_kitchen_access`)**: Implemented migration `supabase/migrations/20261028140000_optimize_has_kitchen_access_rls.sql` replacing multi-table `JOIN` inside RLS checks with indexed scalar subquery (`WHERE organization_id = (SELECT organization_id FROM public.kitchens WHERE id = k_id) AND user_id = (SELECT auth.uid())`). Eliminates query amplification and sequential scans under large tenant scale.
+   - **Atomic Inventory Depletion & Restock (BOM Race Protection)**: In `src/features/inventory/inventory-actions.ts`, eliminated in-memory calculation and whole-value overwrites. Stock updates now execute atomic decrements/increments (`currentStock: { decrement: actualDeduction }` and `currentStock: { increment: delta }`), preventing lost updates during parallel aggregator order injections.
+   - **Supabase Realtime Channel Teardown**: Updated `AppHeader.tsx` `handleSelectOutlet` to invoke `await supabase.removeAllChannels()` before triggering outlet context switch and page reload, preventing dangling WebSockets and memory leaks on counter POS / KDS hardware.
+
+8. **TanStack Query & Dual-Broadcast Realtime Engine (Phase 9 - Completed)**:
+   - **TanStack Query v5 Integration**: Installed `@tanstack/react-query@5.105.0` and wrapped root layout in `src/providers/query-provider.tsx` with `staleTime: 5000` and `refetchOnWindowFocus: true`.
+   - **Zero-Lag SSR Badges**: Pre-calculated count aggregations in `app-header-server.tsx` and `navigation-bar-server.tsx` passing `initialNavCounts` directly into `useNavCounts` for 0ms initial paint without loading flicker.
+   - **Optimistic KDS & Dispatch Mutations**:
+     - `useKdsOrders.ts`: Optimistic dish item checking and ticket transitions to Dispatch with automatic rollback on network failure.
+     - `usePackingOrders.ts`: Optimistic QA packing checklist ticks and dispatch transitions.
+     - `useLiveOrders.ts`: Optimistic order status updates (`ACCEPTED`, `PREPARING`, `READY`, `DISPATCHED`).
+   - **Cross-Device Dual-Broadcast Bus & Loopback Protection**: Solved tenant isolation split-screen lag by broadcasting to facility channel (kitchen--counters) with device UUID loopback protection (payload.senderId === getDeviceUuid()), preventing duplicate counter delta execution on the sender terminal.
+   - **Accurate Counter Delta Logic**:
+     - Isolated station item checking to advance ACCEPTED tickets to PREPARING. The READY transition is strictly reserved for the cook ready trigger (markOrderReadyAction).
+     - Corrected KDS_COMPLETE delta to only decrement kdsCount, preventing badge inflation in Dispatch (which already tracks orders in both PREPARING and READY).
+     - Aligned NavigationBar.tsx and AppHeader.tsx to track the active outlet ID from localStorage.
+   - **Documentation**: Fully documented in `docs/REALTIME_STATE_AND_TANSTACK_QUERY.md`.
 
 ---
 
@@ -213,13 +235,20 @@ gantt
     section Phase 6 (Completed)
     Supabase @supabase/ssr Cookie Auth & RLS    :done,    des5, 2026-10-26, 1d
     Multi-Tenant Session & Error Boundary Hardening:done, des12, 2026-10-26, 1d
-    section Phase 7 (Next Up)
-    Realtime Pub/Sub on Live Orders Queue       :active,  des13, 2026-10-26, 1d
-    Kitchen Switcher & Multi-Outlet Selector    :         des14, after des13, 1d
-    Stripe Billing & Tier Entitlements          :         des7, after des14, 2d
+    Production Scale & Concurrency Hardening    :done,    des15, 2026-10-28, 1d
+    section Phase 7 (Completed)
+    Realtime Pub/Sub on Live Orders Queue       :done,    des13, 2026-10-28, 1d
+    section Phase 8 (Completed)
+    High-Fidelity Web Audio Sound Engine        :done,    des16, 2026-10-28, 1d
+    PostgreSQL Database Partial Indexes         :done,    des17, 2026-10-28, 1d
+    section Phase 9 (Completed)
+    TanStack Query & Dual-Broadcast Engine      :done,    des19, 2026-10-29, 1d
+    section Phase 10 (Next Up)
+    Stripe Billing & Tier Entitlements          :active,  des7, 2026-10-30, 2d
+    Multi-Brand Menu Engineering & Recipe Matrix:         des18, after des7, 2d
 ```
 
 ### Next Immediate Action:
-- Implement Supabase Realtime broadcast listener on Live Orders Queue (`/orders`) for zero-refresh card insertion.
+- Plan and integrate Stripe Billing, subscription tiers, and entitlement gates for multi-facility SaaS accounts.
 
 

@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { revalidateTag } from 'next/cache';
 import { orderTags } from './order-cache';
-import { Channel, OrderStatus, PaymentMethod, PaymentStatus } from '@/types';
+import { Channel, Order, OrderStatus, PaymentMethod, PaymentStatus } from '@/types';
 import { calculateOrderFinancials } from '@/lib/finance';
 
 export type ActionResult<T = void> = 
@@ -17,6 +17,16 @@ export async function updateOrderStatusAction(params: {
   kitchenId?: string;
 }): Promise<ActionResult> {
   try {
+    const session = await getCurrentKitchenContext();
+    const canUpdate = session.role === 'owner' || 
+      session.permissions?.includes('orders') || 
+      session.permissions?.includes('kds') || 
+      session.permissions?.includes('packing') || 
+      session.permissions?.includes('pos');
+    if (!canUpdate) {
+      return { ok: false, error: 'Unauthorized: Operational permission required' };
+    }
+
     const { orderId, status, kitchenId } = params;
 
     const dataToUpdate: Prisma.OrderUpdateInput = { status };
@@ -24,20 +34,30 @@ export async function updateOrderStatusAction(params: {
       dataToUpdate.readyAt = new Date();
     }
 
-    const existingOrder = await prisma.order.findUnique({
-      where: { id: orderId },
-      select: { id: true },
+    const allowedKitchenIds = session.kitchenIds && session.kitchenIds.length > 0
+      ? session.kitchenIds
+      : (session.kitchenId && session.kitchenId !== 'ALL' ? [session.kitchenId] : []);
+
+    const existingOrder = await prisma.order.findFirst({
+      where: {
+        id: orderId,
+        ...(allowedKitchenIds.length > 0 ? { kitchenId: { in: allowedKitchenIds } } : {}),
+      },
+      select: { id: true, kitchenId: true },
     });
 
-    if (existingOrder) {
-      await prisma.order.update({
-        where: { id: orderId },
-        data: dataToUpdate,
-      });
+    if (!existingOrder) {
+      return { ok: false, error: 'Order not found or unauthorized' };
+    }
 
-      if (kitchenId) {
-        revalidateTag(orderTags.kitchen(kitchenId), 'max');
-      }
+    await prisma.order.update({
+      where: { id: orderId },
+      data: dataToUpdate,
+    });
+
+    const targetKitchenId = kitchenId || existingOrder.kitchenId;
+    if (targetKitchenId) {
+      revalidateTag(orderTags.kitchen(targetKitchenId), 'max');
     }
 
     return { ok: true };
@@ -60,6 +80,11 @@ export async function createManualOrderAction(params: {
   items: { menuItemId: string; quantity: number }[];
 }): Promise<ActionResult<{ orderId: string; orderNumber: string }>> {
   try {
+    const session = await getCurrentKitchenContext();
+    if (session.role !== 'owner' && !session.permissions?.includes('pos') && !session.permissions?.includes('orders')) {
+      return { ok: false, error: 'Unauthorized: POS or Orders permission required' };
+    }
+
     let {
       kitchenId,
       brandId,
@@ -72,13 +97,9 @@ export async function createManualOrderAction(params: {
       items,
     } = params;
 
-    // Auto-resolve kitchen if missing or dummy
-    if (!kitchenId || kitchenId === 'kitch-koramangala-01') {
-      const defaultKitchen = await prisma.kitchen.findFirst({
-        where: { isActive: true },
-        select: { id: true },
-      });
-      kitchenId = defaultKitchen?.id;
+    // Auto-resolve kitchen within authenticated user scope
+    if (!kitchenId || kitchenId === 'kitch-koramangala-01' || kitchenId === 'default') {
+      kitchenId = session.kitchenId === 'ALL' ? session.kitchenIds?.[0] : session.kitchenId;
     }
 
     if (!kitchenId) {
@@ -253,28 +274,40 @@ export interface NavCountsResult {
 export async function getNavCountsAction(kitchenId?: string): Promise<ActionResult<NavCountsResult>> {
   try {
     let targetKitchenId = kitchenId;
+    let allowedKitchenIds: string[] = [];
+
     if (!targetKitchenId) {
       const sessionCtx = await getCurrentKitchenContext();
       targetKitchenId = sessionCtx.kitchenId;
+      allowedKitchenIds = sessionCtx.kitchenIds || [];
+    } else if (targetKitchenId === 'ALL') {
+      const sessionCtx = await getCurrentKitchenContext('ALL');
+      allowedKitchenIds = sessionCtx.kitchenIds || [];
     }
 
     if (!targetKitchenId || targetKitchenId === 'default') {
       return { ok: true, data: { ordersCount: 0, kdsCount: 0, packingCount: 0 } };
     }
 
+    const isAll = targetKitchenId === 'ALL';
+    const kitchenWhere = isAll ? { in: allowedKitchenIds } : targetKitchenId;
+
     const [ordersCount, kdsCount, packingCount] = await Promise.all([
       prisma.order.count({
-        where: { kitchenId: targetKitchenId },
+        where: {
+          kitchenId: kitchenWhere,
+          status: { notIn: ['DISPATCHED', 'CANCELLED'] },
+        },
       }),
       prisma.order.count({
         where: {
-          kitchenId: targetKitchenId,
+          kitchenId: kitchenWhere,
           status: { in: ['ACCEPTED', 'PREPARING'] },
         },
       }),
       prisma.order.count({
         where: {
-          kitchenId: targetKitchenId,
+          kitchenId: kitchenWhere,
           status: { in: ['PREPARING', 'READY'] },
         },
       }),
@@ -288,7 +321,18 @@ export async function getNavCountsAction(kitchenId?: string): Promise<ActionResu
         packingCount,
       },
     };
-  } catch (error) {
+  } catch (error: any) {
+    // Expected when unauthenticated or during initial session setup
+    if (error?.name === 'AuthenticationRequiredError' || error?.name === 'KitchenNotFoundError') {
+      return {
+        ok: true,
+        data: {
+          ordersCount: 0,
+          kdsCount: 0,
+          packingCount: 0,
+        },
+      };
+    }
     console.error('Error in getNavCountsAction:', error);
     return {
       ok: true,
@@ -298,6 +342,307 @@ export async function getNavCountsAction(kitchenId?: string): Promise<ActionResu
         packingCount: 0,
       },
     };
+  }
+}
+
+/**
+ * Authoritative snapshot action for client-side /orders live queue resynchronization
+ * Returns the latest list of orders mapped cleanly to the Order domain interface.
+ */
+export async function getLatestOrdersSnapshotAction(kitchenId?: string): Promise<Order[]> {
+  try {
+    let targetKitchenId = kitchenId;
+    let allowedKitchenIds: string[] = [];
+
+    if (!targetKitchenId) {
+      const sessionCtx = await getCurrentKitchenContext();
+      targetKitchenId = sessionCtx.kitchenId;
+      allowedKitchenIds = sessionCtx.kitchenIds || [];
+    } else if (targetKitchenId === 'ALL') {
+      const sessionCtx = await getCurrentKitchenContext('ALL');
+      allowedKitchenIds = sessionCtx.kitchenIds || [];
+    }
+
+    if (!targetKitchenId || targetKitchenId === 'default') {
+      return [];
+    }
+
+    const isAll = targetKitchenId === 'ALL';
+    const kitchenWhere = isAll ? { in: allowedKitchenIds } : targetKitchenId;
+
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const dbOrders = await prisma.order.findMany({
+      where: { 
+        kitchenId: kitchenWhere,
+        OR: [
+          // Active orders
+          { status: { in: ['RECEIVED', 'ACCEPTED', 'PREPARING', 'READY'] } },
+          // Dispatched or cancelled from today's shift
+          {
+            status: { in: ['DISPATCHED', 'CANCELLED'] },
+            createdAt: { gte: startOfToday },
+          },
+        ],
+      },
+      include: {
+        brand: true,
+        items: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+
+    return dbOrders.map((o) => ({
+      id: o.id,
+      orderNumber: o.orderNumber,
+      channel: o.channel as Order['channel'],
+      brandId: o.brandId,
+      brandName: o.brand.name,
+      customerName: o.customerName ?? 'Guest Customer',
+      customerPhone: o.customerPhone ?? undefined,
+      customerAddress: o.customerAddress ?? undefined,
+      status: o.status as Order['status'],
+      paymentMethod: (o.paymentMethod as Order['paymentMethod']) ?? 'COD',
+      paymentStatus: (o.paymentStatus as Order['paymentStatus']) ?? 'PENDING',
+      targetPrepMinutes: o.targetPrepMinutes,
+      createdAt: o.createdAt.toISOString(),
+      updatedAt: (o as any).updatedAt ? (o as any).updatedAt.toISOString() : undefined,
+      version: (o as any).version ?? 0,
+      acknowledgedAt: o.acknowledgedAt?.toISOString(),
+      readyAt: o.readyAt?.toISOString(),
+      checklist: (o.checklist as unknown as Order['checklist']) ?? {
+        cutlery: false,
+        saucesDips: false,
+        napkins: false,
+        tamperSeal: false,
+        beverageSeparated: false,
+      },
+      dynamicChecklist: (o.dynamicChecklist as unknown as Order['dynamicChecklist']) ?? undefined,
+      financials: {
+        grossAmount: o.grossAmount,
+        discount: o.discount,
+        commissionRate: o.commissionRate,
+        commissionAmount: o.commissionAmount,
+        taxes: o.taxes,
+        packagingFeeCollected: o.packagingFeeCollected,
+        ingredientCost: o.ingredientCost,
+        packagingCost: o.packagingCost,
+        netMargin: o.netMargin,
+        netMarginPercentage: o.netMarginPercentage,
+      },
+      items: o.items.map((it) => ({
+        id: it.id,
+        menuItemId: it.menuItemId ?? '',
+        name: it.name,
+        station: it.station as Order['items'][number]['station'],
+        secondaryStations: it.secondaryStations as Order['items'][number]['secondaryStations'],
+        quantity: it.quantity,
+        price: it.price,
+        stationDone: it.stationDone,
+        updatedAt: (it as any).updatedAt ? (it as any).updatedAt.toISOString() : undefined,
+        version: (it as any).version ?? 0,
+      })),
+    }));
+  } catch (error) {
+    console.error('Error in getLatestOrdersSnapshotAction:', error);
+    return [];
+  }
+}
+
+export interface OrderHistoryParams {
+  kitchenId?: string;
+  brandId?: string;
+  dateRange?: 'TODAY' | 'YESTERDAY' | 'LAST_7_DAYS' | 'THIS_MONTH' | 'ALL';
+  status?: OrderStatus | 'ALL';
+  channel?: Channel | 'ALL';
+  search?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface OrderHistoryPayload {
+  orders: Order[];
+  totalCount: number;
+  totalRevenue: number;
+  totalFulfilled: number;
+  totalCancelled: number;
+  page: number;
+  totalPages: number;
+}
+
+export async function getOrderHistoryAction(
+  params: OrderHistoryParams = {}
+): Promise<ActionResult<OrderHistoryPayload>> {
+  try {
+    const session = await getCurrentKitchenContext();
+    const canAccess = session.role === 'owner' || 
+      session.role === 'admin' ||
+      session.permissions?.includes('history') ||
+      session.permissions?.includes('orders');
+    if (!canAccess) {
+      return { ok: false, error: 'Unauthorized: Permission required to view order history' };
+    }
+
+    let targetKitchenId = params.kitchenId;
+    const allowedKitchenIds: string[] = session.kitchenIds || [session.kitchenId];
+
+    // If an explicit kitchen is requested, enforce that it belongs to the user's organization!
+    let kitchenWhere: Prisma.StringFilter | string;
+    if (!targetKitchenId || targetKitchenId === 'ALL') {
+      kitchenWhere = { in: allowedKitchenIds };
+    } else {
+      if (!allowedKitchenIds.includes(targetKitchenId)) {
+        return { ok: false, error: 'Unauthorized: Access to this kitchen facility is denied' };
+      }
+      kitchenWhere = targetKitchenId;
+    }
+
+    const whereClause: Prisma.OrderWhereInput = {
+      kitchenId: kitchenWhere,
+    };
+
+    // 1. Date Range Filter
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+
+    if (params.dateRange === 'TODAY') {
+      whereClause.createdAt = { gte: startOfToday };
+    } else if (params.dateRange === 'YESTERDAY') {
+      const startOfYesterday = new Date(startOfToday.getTime() - 24 * 60 * 60 * 1000);
+      whereClause.createdAt = { gte: startOfYesterday, lt: startOfToday };
+    } else if (params.dateRange === 'LAST_7_DAYS') {
+      const sevenDaysAgo = new Date(startOfToday.getTime() - 7 * 24 * 60 * 60 * 1000);
+      whereClause.createdAt = { gte: sevenDaysAgo };
+    } else if (params.dateRange === 'THIS_MONTH') {
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
+      whereClause.createdAt = { gte: startOfMonth };
+    }
+
+    // 2. Status Filter
+    if (params.status && params.status !== 'ALL') {
+      whereClause.status = params.status;
+    }
+
+    // 3. Channel Filter
+    if (params.channel && params.channel !== 'ALL') {
+      whereClause.channel = params.channel;
+    }
+
+    // 4. Brand Filter
+    if (params.brandId && params.brandId !== 'ALL') {
+      whereClause.brandId = params.brandId;
+    }
+
+    // 5. Search Query Filter (order number, phone, customer name, brand)
+    if (params.search && params.search.trim()) {
+      const query = params.search.trim();
+      const cleanDigits = query.replace(/\D/g, '');
+      whereClause.OR = [
+        { orderNumber: { contains: query, mode: 'insensitive' } },
+        { customerName: { contains: query, mode: 'insensitive' } },
+        { brand: { name: { contains: query, mode: 'insensitive' } } },
+        ...(cleanDigits.length >= 3 ? [{ customerPhone: { contains: cleanDigits } }] : []),
+      ];
+    }
+
+    const page = Math.max(1, params.page || 1);
+    const limit = Math.min(50, Math.max(10, params.limit || 20));
+    const skip = (page - 1) * limit;
+
+    const [totalCount, dbOrders, aggregates, fulfilledCount, cancelledCount] = await Promise.all([
+      prisma.order.count({ where: whereClause }),
+      prisma.order.findMany({
+        where: whereClause,
+        include: {
+          brand: true,
+          items: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.order.aggregate({
+        where: whereClause,
+        _sum: { grossAmount: true },
+      }),
+      prisma.order.count({
+        where: { ...whereClause, status: 'DISPATCHED' },
+      }),
+      prisma.order.count({
+        where: { ...whereClause, status: 'CANCELLED' },
+      }),
+    ]);
+
+    const mappedOrders: Order[] = dbOrders.map((o) => ({
+      id: o.id,
+      orderNumber: o.orderNumber,
+      channel: o.channel as Order['channel'],
+      brandId: o.brandId,
+      brandName: o.brand.name,
+      customerName: o.customerName ?? 'Guest Customer',
+      customerPhone: o.customerPhone ?? undefined,
+      customerAddress: o.customerAddress ?? undefined,
+      status: o.status as Order['status'],
+      paymentMethod: (o.paymentMethod as Order['paymentMethod']) ?? 'COD',
+      paymentStatus: (o.paymentStatus as Order['paymentStatus']) ?? 'PENDING',
+      targetPrepMinutes: o.targetPrepMinutes,
+      createdAt: o.createdAt.toISOString(),
+      updatedAt: (o as any).updatedAt ? (o as any).updatedAt.toISOString() : undefined,
+      version: (o as any).version ?? 0,
+      acknowledgedAt: o.acknowledgedAt?.toISOString(),
+      readyAt: o.readyAt?.toISOString(),
+      checklist: (o.checklist as unknown as Order['checklist']) ?? {
+        cutlery: false,
+        saucesDips: false,
+        napkins: false,
+        tamperSeal: false,
+        beverageSeparated: false,
+      },
+      dynamicChecklist: (o.dynamicChecklist as unknown as Order['dynamicChecklist']) ?? undefined,
+      financials: {
+        grossAmount: o.grossAmount,
+        discount: o.discount,
+        commissionRate: o.commissionRate,
+        commissionAmount: o.commissionAmount,
+        taxes: o.taxes,
+        packagingFeeCollected: o.packagingFeeCollected,
+        ingredientCost: o.ingredientCost,
+        packagingCost: o.packagingCost,
+        netMargin: o.netMargin,
+        netMarginPercentage: o.netMarginPercentage,
+      },
+      items: o.items.map((it) => ({
+        id: it.id,
+        menuItemId: it.menuItemId ?? '',
+        name: it.name,
+        station: it.station as Order['items'][number]['station'],
+        secondaryStations: it.secondaryStations as Order['items'][number]['secondaryStations'],
+        quantity: it.quantity,
+        price: it.price,
+        stationDone: it.stationDone,
+        updatedAt: (it as any).updatedAt ? (it as any).updatedAt.toISOString() : undefined,
+        version: (it as any).version ?? 0,
+      })),
+    }));
+
+    return {
+      ok: true,
+      data: {
+        orders: mappedOrders,
+        totalCount,
+        totalRevenue: aggregates._sum.grossAmount || 0,
+        totalFulfilled: fulfilledCount,
+        totalCancelled: cancelledCount,
+        page,
+        totalPages: Math.ceil(totalCount / limit) || 1,
+      },
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to retrieve order history';
+    console.error('Error in getOrderHistoryAction:', error);
+    return { ok: false, error: message };
   }
 }
 

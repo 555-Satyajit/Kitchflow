@@ -2,12 +2,14 @@ import React from 'react';
 import { getInventoryData } from '../inventory-queries';
 import { InventorySectionClient } from './inventory-section-client';
 import { Skeleton } from '@/components/ui/skeleton';
+import { requirePermission } from '@/lib/session';
 
 interface InventorySectionProps {
   kitchenId?: string;
 }
 
 export async function InventorySection({ kitchenId }: InventorySectionProps) {
+  await requirePermission('inventory');
   const data = await getInventoryData(kitchenId);
 
   return (

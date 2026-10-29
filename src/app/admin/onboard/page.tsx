@@ -42,10 +42,7 @@ import {
   User
 } from 'lucide-react'
 import { formatCurrency, cn } from '@/lib/utils'
-import { provisionKitchenAction } from './onboard-actions'
-
-// Internal security master key for KitchFlow Ops team (can also be passed via NEXT_PUBLIC_INTERNAL_OPS_KEY)
-const INTERNAL_MASTER_KEY = process.env.NEXT_PUBLIC_INTERNAL_OPS_KEY || 'kitchflow2026'
+import { provisionKitchenAction, verifyAdminAccessKeyAction } from './onboard-actions'
 
 // Random secure password generator for kitchen owners
 const generateSecurePassword = () => {
@@ -150,9 +147,10 @@ export default function InternalOnboardingPage() {
   }
 
   // Auth Handler
-  const handleAuthenticate = (e: React.FormEvent) => {
+  const handleAuthenticate = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (accessKeyInput.trim() === INTERNAL_MASTER_KEY || accessKeyInput.trim() === 'kitchflow2026') {
+    const verification = await verifyAdminAccessKeyAction(accessKeyInput.trim())
+    if (verification.ok) {
       setIsAuthenticated(true)
       setAuthError(false)
     } else {
@@ -225,6 +223,7 @@ export default function InternalOnboardingPage() {
 
       // Persist kitchen, brands, and menu items to PostgreSQL database via Prisma Server Action
       const dbResult = await provisionKitchenAction({
+        accessKey: accessKeyInput.trim(),
         name: kitchenName,
         address: outletAddress,
         phone: contactPhone,

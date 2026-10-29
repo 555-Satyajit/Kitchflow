@@ -78,7 +78,10 @@ export async function getDeliveryOrders(kitchenId?: string): Promise<Order[]> {
         stationDone: it.stationDone,
       })),
     }));
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.digest === 'HANGING_PROMISE_REJECTION' || error?.digest === 'NEXT_PRERENDER_SIGNAL') {
+      throw error;
+    }
     console.error('Error fetching delivery orders from PostgreSQL:', error);
     return [];
   }

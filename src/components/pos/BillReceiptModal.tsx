@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import { RealBillPdfDocument } from '@/components/pos/RealBillPdfDocument'
 import { pdf } from '@react-pdf/renderer'
+import { useKitchen } from '@/context/KitchenContext'
 
 interface BillReceiptModalProps {
   order: Order | null
@@ -40,6 +41,7 @@ export function BillReceiptModal({
   onOpenChange,
   onDone
 }: BillReceiptModalProps) {
+  const { brands } = useKitchen()
   const [isGeneratingPdf, setIsGeneratingPdf] = React.useState(false)
 
   if (!order) return null
@@ -109,7 +111,31 @@ export function BillReceiptModal({
   const handleDownloadPdf = async () => {
     try {
       setIsGeneratingPdf(true)
-      const blob = await pdf(<RealBillPdfDocument order={order} />).toBlob()
+      let qrCodeUrl = ''
+      if (typeof window !== 'undefined') {
+        try {
+          const QRCode = (await import('qrcode')).default
+          qrCodeUrl = await QRCode.toDataURL(publicInvoiceUrl, {
+            width: 140,
+            margin: 1,
+            color: { dark: '#18181b', light: '#ffffff' }
+          })
+        } catch (e) {
+          console.warn('QR code generation failed in receipt modal:', e)
+        }
+      }
+
+      const anyOrder = order as any
+      // Resolve matching brand from active kitchen brands if attached to order or context
+      const matchedBrand = anyOrder.brand || brands.find((b) => b.id === order.brandId || b.name.toLowerCase().trim() === order.brandName?.toLowerCase().trim())
+      const blob = await pdf(<RealBillPdfDocument order={order} outletConfig={{
+        address: matchedBrand?.address || 'Link Road, Near Badambedi Bus Stand, Cuttack, Odisha - 753012',
+        phone: matchedBrand?.phone || '+91 97780 99881',
+        email: matchedBrand?.email || 'cuttack.orders@beheroz.in',
+        fssaiLic: matchedBrand?.fssaiLic || '12024020000771',
+        gstin: '21AABCU9603R3ZP',
+        qrCodeUrl,
+      }} />).toBlob()
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
@@ -144,91 +170,90 @@ export function BillReceiptModal({
       return
     }
 
-    const printWindow = window.open('', '_blank', 'width=420,height=600')
-    if (!printWindow) {
-      // Only fallback to window.print() if browser popup was blocked
+    const iframe = document.createElement('iframe')
+    iframe.style.position = 'fixed'
+    iframe.style.right = '0'
+    iframe.style.bottom = '0'
+    iframe.style.width = '0'
+    iframe.style.height = '0'
+    iframe.style.border = '0'
+    document.body.appendChild(iframe)
+
+    const doc = iframe.contentWindow?.document
+    if (!doc) {
       window.print()
+      iframe.remove()
       return
     }
 
-    const receiptHtml = printableElement.outerHTML
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Receipt - ${order.orderNumber}</title>
-          <style>
-            @page {
-              size: 80mm 200mm;
-              margin: 2mm;
-            }
-            * {
-              box-sizing: border-box;
-              margin: 0;
-              padding: 0;
-            }
-            body {
-              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Courier New", Courier, monospace;
-              background: #fff;
-              color: #000;
-              width: 74mm;
-              margin: 0 auto;
-              padding: 2mm 0;
-              font-size: 11px;
-              line-height: 1.35;
-            }
-            #printable-kitchen-receipt {
-              border: none !important;
-              box-shadow: none !important;
-              padding: 0 !important;
-              background: transparent !important;
-              width: 100% !important;
-            }
-            .text-center { text-align: center; }
-            .uppercase { text-transform: uppercase; }
-            .font-black { font-weight: 900; }
-            .font-bold { font-weight: 700; }
-            .font-semibold { font-weight: 600; }
-            .font-medium { font-weight: 500; }
-            .text-zinc-900 { color: #000; }
-            .text-zinc-800 { color: #111; }
-            .text-zinc-600 { color: #444; }
-            .text-zinc-500 { color: #666; }
-            .text-zinc-400 { color: #888; }
-            .border-b { border-bottom: 1px dashed #999; }
-            .border-t { border-top: 1px dashed #999; }
-            .pb-2 { padding-bottom: 5px; }
-            .pb-3 { padding-bottom: 7px; }
-            .pt-1 { padding-top: 4px; }
-            .pt-2 { padding-top: 6px; }
-            .space-y-1 > * + * { margin-top: 2px; }
-            .space-y-1\\.5 > * + * { margin-top: 3px; }
-            .space-y-0\\.5 > * + * { margin-top: 1px; }
-            .flex { display: flex; }
-            .justify-between { justify-content: space-between; }
-            .items-center { align-items: center; }
-            .truncate { white-space: normal; }
-            .rounded { border-radius: 3px; }
-            .bg-emerald-100 { background: #e5e7eb; color: #000; }
-            .px-2 { padding-left: 4px; padding-right: 4px; }
-            .py-0\\.5 { padding-top: 1px; padding-bottom: 1px; }
-          </style>
-        </head>
-        <body>
-          ${receiptHtml}
-          <script>
-            window.onload = function() {
-              window.focus();
-              window.print();
-              setTimeout(function() {
-                window.close();
-              }, 400);
-            };
-          </script>
-        </body>
-      </html>
-    `)
-    printWindow.document.close()
+    const clonedReceipt = printableElement.cloneNode(true)
+    const style = doc.createElement('style')
+    style.textContent = `
+      @page {
+        size: 80mm 200mm;
+        margin: 2mm;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Courier New", Courier, monospace;
+        background: #fff;
+        color: #000;
+        width: 74mm;
+        margin: 0 auto;
+        padding: 2mm 0;
+        font-size: 11px;
+        line-height: 1.35;
+      }
+      #printable-kitchen-receipt {
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        background: transparent !important;
+        width: 100% !important;
+      }
+      .text-center { text-align: center; }
+      .uppercase { text-transform: uppercase; }
+      .font-black { font-weight: 900; }
+      .font-bold { font-weight: 700; }
+      .font-semibold { font-weight: 600; }
+      .font-medium { font-weight: 500; }
+      .text-zinc-900 { color: #000; }
+      .text-zinc-800 { color: #111; }
+      .text-zinc-600 { color: #444; }
+      .text-zinc-500 { color: #666; }
+      .text-zinc-400 { color: #888; }
+      .border-b { border-bottom: 1px dashed #999; }
+      .border-t { border-top: 1px dashed #999; }
+      .pb-2 { padding-bottom: 5px; }
+      .pb-3 { padding-bottom: 7px; }
+      .pt-1 { padding-top: 4px; }
+      .pt-2 { padding-top: 6px; }
+      .space-y-1 > * + * { margin-top: 2px; }
+      .space-y-1\\.5 > * + * { margin-top: 3px; }
+      .space-y-0\\.5 > * + * { margin-top: 1px; }
+      .flex { display: flex; }
+      .justify-between { justify-content: space-between; }
+      .items-center { align-items: center; }
+      .truncate { white-space: normal; }
+      .rounded { border-radius: 3px; }
+      .bg-emerald-100 { background: #e5e7eb; color: #000; }
+      .px-2 { padding-left: 4px; padding-right: 4px; }
+      .py-0\\.5 { padding-top: 1px; padding-bottom: 1px; }
+    `
+    doc.head.appendChild(style)
+    doc.body.appendChild(clonedReceipt)
+
+    setTimeout(() => {
+      iframe.contentWindow?.focus()
+      iframe.contentWindow?.print()
+      setTimeout(() => {
+        iframe.remove()
+      }, 1000)
+    }, 100)
   }
 
   return (

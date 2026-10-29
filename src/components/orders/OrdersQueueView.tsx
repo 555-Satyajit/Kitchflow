@@ -98,8 +98,18 @@ export function OrdersQueueView({
     }
   }
 
+  // Deduplicate orders by order.id to guarantee unique keys across concurrent state updates
+  const uniqueOrders = React.useMemo(() => {
+    const seen = new Set<string>()
+    return orders.filter((o) => {
+      if (!o.id || seen.has(o.id)) return false
+      seen.add(o.id)
+      return true
+    })
+  }, [orders])
+
   // Sort orders with the most at-risk (overdue or least remaining time) first
-  const sortedOrders = [...orders].sort((a, b) => {
+  const sortedOrders = [...uniqueOrders].sort((a, b) => {
     const slaA = getOrderSLA(a).remainingSec
     const slaB = getOrderSLA(b).remainingSec
     return slaA - slaB
