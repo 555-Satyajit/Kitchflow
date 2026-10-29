@@ -6,6 +6,7 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 FROM base AS deps
 WORKDIR /app
 COPY package.json pnpm-lock.yaml prisma ./
+RUN pnpm config set ignore-scripts false
 RUN pnpm install --frozen-lockfile
 
 # Step 2: Builder
