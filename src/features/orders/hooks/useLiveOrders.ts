@@ -111,7 +111,14 @@ export function useLiveOrders(kitchenId?: string, initialOrders: Order[] = []) {
           schema: 'public',
           table: 'orders',
         },
-        () => {
+        (payload: any) => {
+          const changedOrder = payload?.new as Order | undefined;
+          if (changedOrder?.id && payload?.eventType === 'UPDATE') {
+            queryClient.setQueryData<Order[]>(queryKey, (prev = []) =>
+              prev.map((o) => (o.id === changedOrder.id ? { ...o, ...changedOrder } : o))
+            );
+            return;
+          }
           queryClient.invalidateQueries({ queryKey });
           queryClient.invalidateQueries({ queryKey: NAV_COUNTS_QUERY_KEY });
         }
@@ -226,11 +233,7 @@ export function useLiveOrders(kitchenId?: string, initialOrders: Order[] = []) {
       queryClient.invalidateQueries({ queryKey: PACKING_ORDERS_QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: NAV_COUNTS_QUERY_KEY });
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey });
-      queryClient.invalidateQueries({ queryKey: PACKING_ORDERS_QUERY_KEY });
-      queryClient.invalidateQueries({ queryKey: NAV_COUNTS_QUERY_KEY });
-    },
+    // Keep optimistic state stable; background polling or realtime events will settle any diffs
   });
 
   return {

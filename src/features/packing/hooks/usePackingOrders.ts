@@ -145,7 +145,17 @@ export function usePackingOrders(kitchenId?: string, initialOrders: Order[] = []
           schema: 'public',
           table: 'orders',
         },
-        () => {
+        (payload: any) => {
+          const changedOrder = payload?.new as Order | undefined;
+          if (changedOrder?.id) {
+            if (changedOrder.status === 'DISPATCHED' || changedOrder.status === 'CANCELLED') {
+              queryClient.setQueryData<Order[]>(queryKey, (prev = []) =>
+                prev.filter((o) => o.id !== changedOrder.id)
+              );
+              queryClient.invalidateQueries({ queryKey: NAV_COUNTS_QUERY_KEY });
+              return;
+            }
+          }
           queryClient.invalidateQueries({ queryKey });
           queryClient.invalidateQueries({ queryKey: NAV_COUNTS_QUERY_KEY });
         }
@@ -271,10 +281,7 @@ export function usePackingOrders(kitchenId?: string, initialOrders: Order[] = []
       }
       queryClient.invalidateQueries({ queryKey: NAV_COUNTS_QUERY_KEY });
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey });
-      queryClient.invalidateQueries({ queryKey: NAV_COUNTS_QUERY_KEY });
-    },
+    // Keep optimistic state stable; background polling or realtime events will settle any diffs
   });
 
   return {

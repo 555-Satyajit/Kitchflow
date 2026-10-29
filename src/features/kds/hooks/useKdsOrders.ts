@@ -140,7 +140,19 @@ export function useKdsOrders(kitchenId?: string, initialOrders: Order[] = []) {
           schema: 'public',
           table: 'orders',
         },
-        () => {
+        (payload: any) => {
+          // If the update was triggered by our own client/mutation, ignore the postgres change event
+          // to prevent overwriting active optimistic state.
+          const changedOrder = payload?.new as Order | undefined;
+          if (changedOrder?.id) {
+            if (changedOrder.status === 'READY' || changedOrder.status === 'DISPATCHED' || changedOrder.status === 'CANCELLED') {
+              queryClient.setQueryData<Order[]>(queryKey, (prev = []) =>
+                prev.filter((o) => o.id !== changedOrder.id)
+              );
+              queryClient.invalidateQueries({ queryKey: NAV_COUNTS_QUERY_KEY });
+              return;
+            }
+          }
           queryClient.invalidateQueries({ queryKey });
           queryClient.invalidateQueries({ queryKey: NAV_COUNTS_QUERY_KEY });
         }
@@ -203,14 +215,13 @@ export function useKdsOrders(kitchenId?: string, initialOrders: Order[] = []) {
       return { previousOrders };
     },
     onError: (_err, _vars, context) => {
-      // Rollback on network failure
+      // Rollback only on actual network/server rejection
       if (context?.previousOrders) {
         queryClient.setQueryData<Order[]>(queryKey, context.previousOrders);
       }
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey });
-    },
+    // Do NOT aggressively invalidate onSettled; the optimistic state is already exact and
+    // refetching immediately races against the database commit, which causes the item to pop back!
   });
 
   // 4. Optimistic Mutation: Mark Entire Order Ready (Sent to Packing / Dispatch)
@@ -295,11 +306,7 @@ export function useKdsOrders(kitchenId?: string, initialOrders: Order[] = []) {
       queryClient.invalidateQueries({ queryKey: PACKING_ORDERS_QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: NAV_COUNTS_QUERY_KEY });
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey });
-      queryClient.invalidateQueries({ queryKey: PACKING_ORDERS_QUERY_KEY });
-      queryClient.invalidateQueries({ queryKey: NAV_COUNTS_QUERY_KEY });
-    },
+    // Keep optimistic state stable; background polling or realtime events will settle any diffs
   });
 
   return {
