@@ -16,14 +16,11 @@ import {
   Plus,
   Minus,
   ArrowRight,
-  Phone,
   ShoppingBag,
   Sparkles,
   MapPin,
   X,
-  MessageCircle,
   Flame,
-  Clock,
   Star,
   Coffee,
 } from 'lucide-react'
@@ -102,6 +99,8 @@ export function StorefrontClientView({
     string | null
   >(null)
 
+  const isSearching = searchQuery.trim().length > 0
+
   const categories = useMemo(() => {
     const set = new Set<string>()
     dishes.forEach((d) => set.add(d.category))
@@ -147,12 +146,10 @@ export function StorefrontClientView({
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#F5F3EF] via-[#FAF8F5] to-[#F3EFEA] text-[#1C1917] max-w-md mx-auto relative pb-36 font-sans selection:bg-[#E11D48] selection:text-white">
-      {/* 1. Ultra-Frosted Liquid Glass Navigation Bar */}
-      <header className="sticky top-0 z-40 bg-white/65 backdrop-blur-3xl border-b border-white/60 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] transition-all">
-        {/* Top Status & Brand Row */}
-        <div className="px-4.5 pt-3.5 pb-2 flex items-center justify-between gap-3">
+      {/* 1. Ultra-Clean Brand Header (Compact & Never In The Way) */}
+      <header className="sticky top-0 z-40 bg-white/75 backdrop-blur-3xl border-b border-white/60 shadow-xs transition-all">
+        <div className="px-4.5 py-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 min-w-0">
-            {/* Soft Translucent Brand Pill */}
             <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-[#BE123C] to-[#FB7185] text-white font-extrabold text-sm flex items-center justify-center shadow-md shadow-rose-900/20 border border-white/40 shrink-0">
               {brand.name.slice(0, 1)}
             </div>
@@ -171,14 +168,14 @@ export function StorefrontClientView({
             </div>
           </div>
 
-          {/* Mode Switcher (Liquid Glass Segmented Capsule) */}
+          {/* Mode Switcher */}
           <div className="flex items-center p-0.5 bg-stone-200/50 backdrop-blur-xl rounded-full text-[11px] font-semibold shrink-0 border border-white/60 shadow-inner">
             <button
               type="button"
               onClick={() => setMode('DINE_IN')}
               className={`px-3 py-1 rounded-full transition-all ${
                 mode === 'DINE_IN'
-                  ? 'bg-white/95 text-[#1C1917] shadow-sm font-bold backdrop-blur-md'
+                  ? 'bg-white text-[#1C1917] shadow-xs font-bold'
                   : 'text-stone-500 hover:text-[#1C1917]'
               }`}
             >
@@ -189,7 +186,7 @@ export function StorefrontClientView({
               onClick={() => setMode('TAKEAWAY')}
               className={`px-3 py-1 rounded-full transition-all ${
                 mode === 'TAKEAWAY'
-                  ? 'bg-white/95 text-[#1C1917] shadow-sm font-bold backdrop-blur-md'
+                  ? 'bg-white text-[#1C1917] shadow-xs font-bold'
                   : 'text-stone-500 hover:text-[#1C1917]'
               }`}
             >
@@ -197,32 +194,33 @@ export function StorefrontClientView({
             </button>
           </div>
         </div>
+      </header>
 
-        {/* Minimal Glass Search Inset */}
-        <div className="px-4.5 pb-2.5">
-          <div className="relative flex items-center">
-            <Search className="w-4 h-4 absolute left-3.5 text-stone-400" />
-            <input
-              type="text"
-              placeholder="Search crispy zingers, artisan pizzas, deals..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full text-xs pl-9.5 pr-8 py-2 rounded-2xl bg-white/70 backdrop-blur-xl border border-white/90 text-stone-900 placeholder:text-stone-400 shadow-2xs focus:outline-none focus:bg-white focus:ring-2 focus:ring-[#BE123C]/20 focus:border-[#BE123C] transition-all"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 text-stone-400 hover:text-stone-900"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
+      {/* 2. Search & Category Pills (Pinned directly below the header) */}
+      <div className="sticky top-[58px] z-30 bg-[#FAF8F5]/90 backdrop-blur-2xl border-b border-stone-200/60 px-4.5 py-2.5 space-y-2 transition-all">
+        {/* Search Field */}
+        <div className="relative flex items-center">
+          <Search className="w-4 h-4 absolute left-3.5 text-stone-400" />
+          <input
+            type="text"
+            placeholder="Search crispy zingers, artisan pizzas, deals..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full text-xs pl-9.5 pr-8 py-2.5 rounded-2xl bg-white/80 backdrop-blur-xl border border-stone-200/80 text-stone-900 placeholder:text-stone-400 shadow-2xs focus:outline-none focus:bg-white focus:ring-2 focus:ring-[#BE123C]/20 focus:border-[#BE123C] transition-all"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 text-stone-400 hover:text-stone-900"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
-        {/* Horizontal Category Strip (Translucent Frosted Glass Pills) */}
-        <div className="px-4.5 pb-2.5 overflow-x-auto no-scrollbar flex items-center gap-1.5">
+        {/* Category Filter Pills */}
+        <div className="overflow-x-auto no-scrollbar flex items-center gap-1.5 pt-0.5">
           {categories.map((cat) => {
             const isSelected = activeCategory === cat
             return (
@@ -232,7 +230,7 @@ export function StorefrontClientView({
                 onClick={() => setActiveCategory(cat)}
                 className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all uppercase tracking-wider ${
                   isSelected
-                    ? 'bg-[#1C1917] text-white shadow-sm scale-102'
+                    ? 'bg-[#1C1917] text-white shadow-xs scale-102'
                     : 'bg-white/60 backdrop-blur-md text-stone-600 border border-white/80 hover:bg-white/90'
                 }`}
               >
@@ -241,44 +239,55 @@ export function StorefrontClientView({
             )
           })}
         </div>
-      </header>
-
-      {/* 2. Glass Spotlight Feature Card */}
-      <div className="px-4.5 pt-3.5 pb-1">
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#9F1239]/90 via-[#BE123C]/90 to-[#E11D48]/90 backdrop-blur-2xl text-white p-4.5 shadow-lg border border-white/30 flex items-center justify-between">
-          <div className="space-y-1 z-10 max-w-[62%]">
-            <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-amber-200 flex items-center gap-1">
-              <Flame className="w-3.5 h-3.5 fill-amber-300 text-amber-300" />
-              <span>Sizzling Special</span>
-            </span>
-            <h2 className="text-base font-extrabold uppercase tracking-tight leading-tight text-white drop-shadow-xs">
-              Crispy Combos & Hot Artisan Crusts
-            </h2>
-            <p className="text-[11px] text-rose-100 font-light leading-relaxed">
-              Order direct • Freshly prepared upon order.
-            </p>
-          </div>
-
-          <div className="w-24 h-24 rounded-2xl overflow-hidden relative shadow-md border-2 border-white/30 shrink-0">
-            <Image
-              src={PROMO_SHOWCASE}
-              alt="Promo"
-              fill
-              sizes="140px"
-              className="object-cover"
-            />
-          </div>
-        </div>
       </div>
 
-      {/* 3. Section Title */}
-      <div className="px-4.5 pt-4 pb-2 flex items-center justify-between">
+      {/* 3. Sleek Redesigned Highlight / Special Card (Automatically hides when searching so results show with zero obstruction) */}
+      {!isSearching && (
+        <div className="px-4.5 pt-3.5 pb-1 animate-in fade-in duration-300">
+          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#9F1239] via-[#BE123C] to-[#E11D48] text-white p-4 shadow-md shadow-rose-950/15 border border-white/20 flex items-center justify-between gap-3">
+            {/* Ambient specular highlight */}
+            <div className="absolute -right-6 -bottom-6 w-28 h-28 bg-amber-400/20 rounded-full blur-2xl pointer-events-none" />
+
+            <div className="space-y-1.5 z-10 min-w-0 flex-1">
+              <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-black/25 backdrop-blur-md border border-white/15">
+                <Flame className="w-3 h-3 fill-amber-300 text-amber-300" />
+                <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-amber-200">
+                  Today&apos;s Special
+                </span>
+              </div>
+              <h2 className="text-sm font-extrabold uppercase tracking-tight leading-snug text-white drop-shadow-xs">
+                Crispy Combos &amp; Hot Artisan Crusts
+              </h2>
+              <p className="text-[11px] text-rose-100/90 font-normal leading-tight">
+                Order direct • Freshly prepared upon order
+              </p>
+            </div>
+
+            <div className="w-20 h-20 rounded-xl overflow-hidden relative shadow-sm border border-white/30 shrink-0">
+              <Image
+                src={PROMO_SHOWCASE}
+                alt="Promo"
+                fill
+                sizes="100px"
+                className="object-cover"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. Results Header */}
+      <div className="px-4.5 pt-3 pb-2 flex items-center justify-between">
         <div>
           <h2 className="text-xs font-mono font-bold tracking-wider uppercase text-stone-500">
-            {activeCategory === 'ALL' ? 'Popular Recommendations' : activeCategory}
+            {isSearching
+              ? `Search Results for "${searchQuery}"`
+              : activeCategory === 'ALL'
+              ? 'Popular Recommendations'
+              : activeCategory}
           </h2>
           <p className="text-[11px] text-stone-400">
-            Handcrafted fresh upon your ticket
+            {isSearching ? 'Instant live match' : 'Handcrafted fresh upon your ticket'}
           </p>
         </div>
         <span className="text-[10px] font-mono font-semibold px-2.5 py-0.5 rounded-full bg-white/70 backdrop-blur-md border border-white/80 text-stone-600 shadow-2xs">
@@ -286,7 +295,7 @@ export function StorefrontClientView({
         </span>
       </div>
 
-      {/* 4. Refined 2-Column Liquid Glass Grid */}
+      {/* 5. Food Grid (Immediately visible right under the search query) */}
       <main className="px-4.5 grid grid-cols-2 gap-3.5">
         {filteredDishes.length === 0 ? (
           <div className="col-span-2 p-16 text-center text-stone-400 space-y-2">
@@ -392,7 +401,7 @@ export function StorefrontClientView({
         )}
       </main>
 
-      {/* 5. Liquid Glass Bottom Dock with Cart */}
+      {/* 6. Liquid Glass Bottom Dock with Cart */}
       {totalCount > 0 && (
         <aside
           aria-label="Order Cart Dock"
@@ -420,7 +429,7 @@ export function StorefrontClientView({
         </aside>
       )}
 
-      {/* 6. Customization Sheet */}
+      {/* 7. Customization Sheet */}
       <ModifierModal
         dish={selectedDishForModal}
         isOpen={!!selectedDishForModal}
@@ -443,7 +452,7 @@ export function StorefrontClientView({
         }}
       />
 
-      {/* 7. Checkout Sheet */}
+      {/* 8. Checkout Sheet */}
       <CheckoutModal
         brand={brand}
         isOpen={isCheckoutOpen}
@@ -454,7 +463,7 @@ export function StorefrontClientView({
         }}
       />
 
-      {/* 8. Success Live Confirmation */}
+      {/* 9. Success Live Confirmation */}
       {placedOrderSuccessToken && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-2xl flex items-center justify-center p-4">
           <div className="bg-white/85 backdrop-blur-3xl border border-white/80 max-w-xs w-full p-6 rounded-3xl shadow-2xl text-center space-y-4">
