@@ -93,6 +93,10 @@ export function AppHeader({
 }: AppHeaderProps = {}) {
   const pathname = usePathname()
 
+  if (pathname?.startsWith('/menu')) {
+    return null
+  }
+
   const { 
     isPausedAll, 
     pausedPlatforms, 

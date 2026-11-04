@@ -27,6 +27,10 @@ export function NavigationBar({
   initialNavCounts,
 }: NavigationBarProps = {}) {
   const pathname = usePathname()
+
+  if (pathname?.startsWith('/menu')) {
+    return null
+  }
   const [mounted, setMounted] = useState(false)
   const { ingredients } = useKitchen()
 

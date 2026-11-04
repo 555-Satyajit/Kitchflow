@@ -8,6 +8,7 @@ import { AppHeader } from "@/components/mobile/AppHeader";
 import { NavigationBar } from "@/components/mobile/NavigationBar";
 import { ServiceWorkerRegister } from "@/components/pwa/ServiceWorkerRegister";
 import { LocalFirstSyncSupervisor } from "@/components/LocalFirstSyncSupervisor";
+import { AppContentWrapper } from "@/components/AppContentWrapper";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -45,7 +46,7 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
-  themeColor: "#f97316",
+  themeColor: "#ffffff",
 };
 
 export default function RootLayout({
@@ -61,9 +62,9 @@ export default function RootLayout({
             <React.Suspense fallback={<div className="h-14 border-b border-border bg-background" />}>
               <AppHeader />
             </React.Suspense>
-            <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-8">
+            <AppContentWrapper>
               {children}
-            </main>
+            </AppContentWrapper>
             <React.Suspense fallback={null}>
               <NavigationBar />
             </React.Suspense>

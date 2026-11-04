@@ -70,6 +70,7 @@ export async function updateSession(request: NextRequest) {
   const isPublicRoute =
     isLoginPage ||
     pathname.startsWith('/invoice') ||
+    pathname.startsWith('/menu') ||
     pathname.startsWith('/admin') ||
     pathname === '/' ||
     pathname === '/manifest.json' ||

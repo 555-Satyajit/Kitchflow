@@ -31,7 +31,21 @@ export async function applyMutationAction(params: {
       return { ok: false, error: 'Unauthorized: Operational permission required' };
     }
 
-    const { mutationId, kitchenId, orderId, actionType, payload, deviceId } = params;
+    let { mutationId, kitchenId, orderId, actionType, payload, deviceId } = params;
+
+    // Guard against literal 'ALL' or 'all' pseudo-kitchen ID passed from multi-outlet overview
+    if (!kitchenId || kitchenId.toUpperCase() === 'ALL') {
+      if (session.kitchenId && session.kitchenId.toUpperCase() !== 'ALL') {
+        kitchenId = session.kitchenId;
+      } else if (session.kitchenIds && session.kitchenIds.length > 0) {
+        kitchenId = session.kitchenIds[0];
+      } else {
+        const firstKitchen = await prisma.kitchen.findFirst({ select: { id: true } });
+        if (firstKitchen) {
+          kitchenId = firstKitchen.id;
+        }
+      }
+    }
 
     // Call stored procedure apply_mutation
     const query = `
