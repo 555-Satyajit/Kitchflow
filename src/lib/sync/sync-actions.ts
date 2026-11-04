@@ -36,9 +36,9 @@ export async function applyMutationAction(params: {
     // Call stored procedure apply_mutation
     const query = `
       SELECT apply_mutation(
-        $1::uuid,
+        $1::text,
         $2::text,
-        $3::uuid,
+        $3::text,
         $4::text,
         $5::jsonb,
         $6::text
