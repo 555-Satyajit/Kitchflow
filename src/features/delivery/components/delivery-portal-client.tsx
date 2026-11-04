@@ -13,7 +13,8 @@ import {
   PackageCheck,
   Flame,
   ArrowRight,
-  AlertTriangle
+  AlertTriangle,
+  Loader2
 } from 'lucide-react'
 import { useKitchen } from '@/context/KitchenContext'
 import { cn, formatCurrency } from '@/lib/utils'
@@ -28,48 +29,48 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Order } from '@/types'
+import { useKitchenStore, selectDeliveryOrders } from '@/stores/useKitchenStore'
+import { useShallow } from 'zustand/react/shallow'
+import { markDeliveryCompletedAction, markDeliveryFailedAction } from '../delivery-actions'
 
 interface DeliveryPortalClientProps {
   initialOrders: Order[]
   kitchenId?: string
 }
 
-export function DeliveryPortalClient({ initialOrders }: DeliveryPortalClientProps) {
-  const { orders, setOrders, handleUpdateStatus } = useKitchen()
-  const [filterTab, setFilterTab] = useState<'PENDING' | 'DISPATCHED' | 'ALL'>('PENDING')
+export function DeliveryPortalClient({ initialOrders, kitchenId }: DeliveryPortalClientProps) {
+  const storeOrders = useKitchenStore(useShallow(selectDeliveryOrders))
+  const setBulkOrders = useKitchenStore((s) => s.setBulkOrders)
+
+  React.useEffect(() => {
+    if (initialOrders && initialOrders.length > 0) {
+      setBulkOrders(initialOrders)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const liveOrders = React.useMemo(() => {
+    return storeOrders.filter((o) => {
+      return !kitchenId || kitchenId === 'all' || !o.kitchenId || o.kitchenId === kitchenId
+    })
+  }, [storeOrders, kitchenId])
+
+  // Default to DISPATCHED tab so orders sealed from Dispatch Station appear here immediately
+  const [filterTab, setFilterTab] = useState<'DISPATCHED' | 'DELIVERED' | 'ALL'>('DISPATCHED')
   const [searchQuery, setSearchQuery] = useState('')
   const [activeDriver] = useState<string>('Raju (Runner #1)')
 
-  // Sync initial server-rendered orders from PostgreSQL into state on load
-  useEffect(() => {
-    if (initialOrders && initialOrders.length > 0) {
-      setOrders((prev) => {
-        // Merge so we don't wipe out any new in-memory orders
-        const existingIds = new Set(prev.map((o) => o.id))
-        const merged = [...prev]
-        for (const o of initialOrders) {
-          if (!existingIds.has(o.id)) {
-            merged.push(o)
-          } else {
-            // Keep DB status as authoritative
-            const idx = merged.findIndex((m) => m.id === o.id)
-            if (idx !== -1) merged[idx] = o
-          }
-        }
-        return merged
-      })
-    }
-  }, [initialOrders, setOrders])
-
   // Filter orders relevant for in-house delivery riders (our DIRECT delivery orders only)
-  const deliveryOrders = orders.filter((o) => {
+  const deliveryOrders = liveOrders.filter((o) => {
     if (o.channel !== 'DIRECT') return false
 
-    if (filterTab === 'PENDING') {
-      return o.status === 'READY' || o.status === 'PREPARING' || o.status === 'ACCEPTED'
-    }
+    // "Dispatched / On the Road": active delivery orders currently with the runner that haven't been completed or cancelled yet
     if (filterTab === 'DISPATCHED') {
-      return o.status === 'DISPATCHED'
+      return o.status === 'DISPATCHED' && !o.deliveredAt && !o.undeliveredAt
+    }
+    // "Completed / History": orders marked delivered or reported undelivered
+    if (filterTab === 'DELIVERED') {
+      return !!o.deliveredAt || !!o.undeliveredAt
     }
     return true
   }).filter((o) => {
@@ -83,19 +84,120 @@ export function DeliveryPortalClient({ initialOrders }: DeliveryPortalClientProp
     )
   })
 
-  const pendingCount = orders.filter((o) => o.channel === 'DIRECT' && (o.status === 'READY' || o.status === 'PREPARING' || o.status === 'ACCEPTED')).length
-  const completedTodayCount = orders.filter((o) => o.channel === 'DIRECT' && o.status === 'DISPATCHED').length
+  const dispatchedActiveCount = liveOrders.filter((o) => o.channel === 'DIRECT' && o.status === 'DISPATCHED' && !o.deliveredAt && !o.undeliveredAt).length
+  const deliveredCount = liveOrders.filter((o) => o.channel === 'DIRECT' && (!!o.deliveredAt || !!o.undeliveredAt)).length
 
   const [confirmingOrder, setConfirmingOrder] = useState<Order | null>(null)
+  const [undeliveredOrder, setUndeliveredOrder] = useState<Order | null>(null)
+  const [failReason, setFailReason] = useState<string>('Customer Unreachable / Phone Switched Off')
+  const [loadingOrderId, setLoadingOrderId] = useState<string | null>(null)
+  const [actionFeedback, setActionFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+
+  const isMarkingDelivered = !!loadingOrderId
+  const isMarkingUndelivered = !!loadingOrderId
 
   const handlePromptDeliver = (order: Order) => {
     setConfirmingOrder(order)
   }
 
-  const handleConfirmDeliver = () => {
+  const handleConfirmDeliver = async () => {
     if (!confirmingOrder) return
-    handleUpdateStatus(confirmingOrder.id, 'DISPATCHED')
+    const orderToComplete = confirmingOrder
+    setLoadingOrderId(orderToComplete.id)
     setConfirmingOrder(null)
+
+    // 1. 0ms instant local optimistic update in Zustand
+    useKitchenStore.setState((state) => {
+      const existing = state.orders[orderToComplete.id]
+      if (!existing) return state
+      return {
+        orders: {
+          ...state.orders,
+          [orderToComplete.id]: {
+            ...existing,
+            status: 'DISPATCHED',
+            deliveredAt: new Date().toISOString(),
+            paymentStatus: 'PAID',
+          },
+        },
+      }
+    })
+
+    // 2. Persist to server
+    try {
+      const res = await markDeliveryCompletedAction({
+        orderId: orderToComplete.id,
+        kitchenId: kitchenId !== 'ALL' ? kitchenId : undefined,
+      })
+      if (!res.ok) throw new Error(res.error || 'Failed to complete delivery')
+
+      setActionFeedback({
+        message: `Order #${orderToComplete.orderNumber} successfully marked as Delivered!`,
+        type: 'success',
+      })
+      setTimeout(() => setActionFeedback(null), 4000)
+    } catch (err: any) {
+      setActionFeedback({
+        message: err?.message || 'Failed to complete delivery',
+        type: 'error',
+      })
+      setTimeout(() => setActionFeedback(null), 5000)
+    } finally {
+      setLoadingOrderId(null)
+    }
+  }
+
+  const handlePromptUndelivered = (order: Order) => {
+    setUndeliveredOrder(order)
+  }
+
+  const handleConfirmUndelivered = async () => {
+    if (!undeliveredOrder) return
+    const orderToFail = undeliveredOrder
+    const reasonToFail = failReason
+    setLoadingOrderId(orderToFail.id)
+    setUndeliveredOrder(null)
+
+    // 1. 0ms instant local optimistic update in Zustand
+    useKitchenStore.setState((state) => {
+      const existing = state.orders[orderToFail.id]
+      if (!existing) return state
+      return {
+        orders: {
+          ...state.orders,
+          [orderToFail.id]: {
+            ...existing,
+            status: 'CANCELLED',
+            undeliveredAt: new Date().toISOString(),
+            undeliveredReason: reasonToFail,
+          },
+        },
+      }
+    })
+
+    // 2. Persist to server
+    try {
+      const res = await markDeliveryFailedAction({
+        orderId: orderToFail.id,
+        reason: reasonToFail,
+        kitchenId: kitchenId !== 'ALL' ? kitchenId : undefined,
+      })
+      if (!res.ok) throw new Error(res.error || 'Failed to update order status')
+
+      setActionFeedback({
+        message: `Order #${orderToFail.orderNumber} marked as Undelivered / Issue.`,
+        type: 'success',
+      })
+      setTimeout(() => setActionFeedback(null), 4000)
+    } catch (err: any) {
+      setActionFeedback({
+        message: err?.message || 'Failed to update order status',
+        type: 'error',
+      })
+      setTimeout(() => setActionFeedback(null), 5000)
+    } finally {
+      setLoadingOrderId(null)
+    }
   }
 
   return (
@@ -120,6 +222,34 @@ export function DeliveryPortalClient({ initialOrders }: DeliveryPortalClientProp
         </div>
       </div>
 
+      {/* Action Notification Banner */}
+      {actionFeedback && (
+        <div
+          className={cn(
+            "p-3 rounded-xl border text-xs flex items-center justify-between gap-2 shadow-xs transition-all animate-in fade-in slide-in-from-top-2",
+            actionFeedback.type === 'success'
+              ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-800 dark:text-emerald-300 font-semibold"
+              : "bg-red-500/15 border-red-500/30 text-red-800 dark:text-red-300 font-semibold"
+          )}
+        >
+          <div className="flex items-center gap-2">
+            {actionFeedback.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+            )}
+            <span>{actionFeedback.message}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActionFeedback(null)}
+            className="w-5 h-5 rounded-md hover:bg-black/10 dark:hover:bg-white/10 flex items-center justify-center shrink-0 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Driver Status Inset Card */}
       <div className="p-3.5 rounded-2xl bg-card/90 border border-border/80 backdrop-blur-md shadow-2xs flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -137,37 +267,19 @@ export function DeliveryPortalClient({ initialOrders }: DeliveryPortalClientProp
         </div>
         <div className="text-right">
           <span className="text-[10px] font-semibold text-muted-foreground tracking-wider uppercase font-mono block">
-            Completed Shift
+            Active Runs
           </span>
           <Badge 
             variant="outline" 
-            className="text-xs font-bold font-mono text-emerald-600 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 rounded-lg"
+            className="text-xs font-bold font-mono text-blue-600 dark:text-blue-400 border-blue-500/30 bg-blue-500/10 px-2 py-0.5 rounded-lg"
           >
-            {completedTodayCount} Delivered
+            {dispatchedActiveCount} On Road
           </Badge>
         </div>
       </div>
 
       {/* Segmented Tab Control (Apple Inset Style) */}
       <div className="grid grid-cols-3 gap-1 bg-muted/50 p-1 rounded-2xl border border-border/60 text-xs font-semibold shadow-2xs">
-        <button
-          type="button"
-          onClick={() => setFilterTab('PENDING')}
-          className={cn(
-            "h-9 rounded-xl transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 active:scale-[0.98]",
-            filterTab === 'PENDING' 
-              ? "bg-background text-foreground shadow-sm font-bold" 
-              : "text-muted-foreground hover:text-foreground"
-          )}
-        >
-          <span>To Deliver</span>
-          {pendingCount > 0 && (
-            <span className="h-5 px-1.5 rounded-full bg-primary text-primary-foreground text-[10px] font-mono font-bold flex items-center justify-center">
-              {pendingCount}
-            </span>
-          )}
-        </button>
-
         <button
           type="button"
           onClick={() => setFilterTab('DISPATCHED')}
@@ -178,9 +290,27 @@ export function DeliveryPortalClient({ initialOrders }: DeliveryPortalClientProp
               : "text-muted-foreground hover:text-foreground"
           )}
         >
-          <span>Delivered</span>
-          {completedTodayCount > 0 && (
-            <span className="text-[10px] font-mono text-muted-foreground">({completedTodayCount})</span>
+          <span>To Deliver</span>
+          {dispatchedActiveCount > 0 && (
+            <span className="h-5 px-1.5 rounded-full bg-blue-600 text-white text-[10px] font-mono font-bold flex items-center justify-center">
+              {dispatchedActiveCount}
+            </span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setFilterTab('DELIVERED')}
+          className={cn(
+            "h-9 rounded-xl transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 active:scale-[0.98]",
+            filterTab === 'DELIVERED' 
+              ? "bg-background text-foreground shadow-sm font-bold" 
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <span>Completed</span>
+          {deliveredCount > 0 && (
+            <span className="text-[10px] font-mono text-muted-foreground">({deliveredCount})</span>
           )}
         </button>
 
@@ -228,60 +358,83 @@ export function DeliveryPortalClient({ initialOrders }: DeliveryPortalClientProp
             </div>
             <p className="text-sm font-bold text-foreground">No orders in this queue</p>
             <p className="text-xs text-muted-foreground max-w-xs mx-auto">
-              {filterTab === 'PENDING' 
-                ? 'All delivery orders have been handed over to riders or marked delivered.' 
+              {filterTab === 'DISPATCHED' 
+                ? 'No active orders currently out for delivery.' 
+                : filterTab === 'DELIVERED'
+                ? 'No completed delivery runs recorded today.'
                 : 'No delivery history matching your search query.'}
             </p>
           </div>
         ) : (
           deliveryOrders.map((order) => {
             const isReady = order.status === 'READY'
-            const isDispatched = order.status === 'DISPATCHED'
+            const isCooking = order.status === 'PREPARING' || order.status === 'ACCEPTED' || order.status === 'RECEIVED'
+            const isDispatched = order.status === 'DISPATCHED' && !order.deliveredAt && !order.undeliveredAt
+            const isDelivered = !!order.deliveredAt
+            const isUndelivered = !!order.undeliveredAt
 
             return (
               <div 
                 key={order.id} 
                 className={cn(
                   "p-4 rounded-2xl border space-y-3.5 transition-all bg-card/90 backdrop-blur-md shadow-2xs",
-                  isReady 
+                  isDelivered
+                    ? "border-emerald-500/30 bg-emerald-500/5 ring-1 ring-emerald-500/10"
+                    : isUndelivered
+                    ? "border-red-500/30 bg-red-500/5 ring-1 ring-red-500/10"
+                    : isDispatched
+                    ? "border-blue-500/30 bg-blue-500/5 ring-1 ring-blue-500/10"
+                    : isReady 
                     ? "border-emerald-500/40 bg-gradient-to-br from-emerald-500/5 via-card to-card ring-1 ring-emerald-500/20" 
                     : "border-border/80"
                 )}
               >
                 {/* Header: Order Number, Channel Badge & Status */}
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono font-extrabold text-sm text-foreground tracking-tight">
+                <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="font-mono font-extrabold text-xs sm:text-sm text-foreground tracking-tight whitespace-nowrap">
                       {order.orderNumber}
                     </span>
                     <Badge 
-                      className="text-[9px] font-bold uppercase font-mono px-2 py-0.5 border-none bg-blue-500/15 text-blue-600 dark:text-blue-400"
+                      className="text-[8px] sm:text-[9px] font-bold uppercase font-mono px-1.5 py-0.5 border-none bg-blue-500/15 text-blue-600 dark:text-blue-400 shrink-0"
                     >
-                      DIRECT DELIVERY
+                      DIRECT
                     </Badge>
                   </div>
 
                   <Badge 
                     className={cn(
-                      "text-[10px] font-mono font-bold px-2 py-0.5 rounded-lg border-none flex items-center gap-1",
-                      isDispatched ? "bg-muted text-muted-foreground" :
+                      "text-[9px] sm:text-[10px] font-mono font-bold px-2 py-0.5 rounded-lg border-none flex items-center gap-1 shrink-0 whitespace-nowrap",
+                      isDelivered ? "bg-emerald-600 text-white shadow-xs" :
+                      isUndelivered ? "bg-red-600 text-white shadow-xs" :
+                      isDispatched ? "bg-blue-600 text-white shadow-xs" :
                       isReady ? "bg-emerald-500 text-white shadow-xs animate-pulse" :
                       "bg-amber-500/15 text-amber-600 dark:text-amber-400"
                     )}
                   >
-                    {isDispatched ? (
+                    {isDelivered ? (
                       <>
-                        <CheckCircle2 className="w-3 h-3" />
+                        <CheckCircle2 className="w-3 h-3 text-white shrink-0" />
                         <span>DELIVERED</span>
+                      </>
+                    ) : isUndelivered ? (
+                      <>
+                        <AlertTriangle className="w-3 h-3 text-white shrink-0" />
+                        <span>FAILED / RETURNED</span>
+                      </>
+                    ) : isDispatched ? (
+                      <>
+                        <Bike className="w-3 h-3 text-white shrink-0" />
+                        <span>OUT FOR DELIVERY</span>
                       </>
                     ) : isReady ? (
                       <>
-                        <PackageCheck className="w-3 h-3" />
+                        <PackageCheck className="w-3 h-3 shrink-0" />
                         <span>PACKED & READY</span>
                       </>
                     ) : (
                       <>
-                        <Flame className="w-3 h-3 text-amber-500" />
+                        <Flame className="w-3 h-3 text-amber-500 shrink-0" />
                         <span>COOKING</span>
                       </>
                     )}
@@ -341,22 +494,72 @@ export function DeliveryPortalClient({ initialOrders }: DeliveryPortalClientProp
                   </p>
                 </div>
 
-                {/* 44px Ergonomic Delivery Action Button */}
-                {!isDispatched && (
-                  <div className="pt-1">
+                {/* Delivered or Undelivered Status Badges & Action Buttons */}
+                {isDelivered && (
+                  <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs flex items-center justify-between text-emerald-800 dark:text-emerald-300 font-medium">
+                    <span className="flex items-center gap-1.5 font-bold">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      Delivered to Customer
+                    </span>
+                    {order.deliveredAt && (
+                      <span className="font-mono text-[10px] text-muted-foreground">
+                        {new Date(order.deliveredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {isUndelivered && (
+                  <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-xs space-y-1 text-red-800 dark:text-red-300">
+                    <div className="flex items-center justify-between font-bold">
+                      <span className="flex items-center gap-1.5 text-red-600 dark:text-red-400">
+                        <AlertTriangle className="w-4 h-4" />
+                        Delivery Returned / Failed
+                      </span>
+                      {order.undeliveredAt && (
+                        <span className="font-mono text-[10px] text-muted-foreground">
+                          {new Date(order.undeliveredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
+                    </div>
+                    {order.undeliveredReason && (
+                      <p className="text-[11px] text-red-700 dark:text-red-300 font-mono">
+                        Reason: {order.undeliveredReason}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* 44px Ergonomic Delivery Action Buttons (Only shown for active Dispatched runs) */}
+                {isDispatched && (
+                  <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <Button
                       type="button"
                       onClick={() => handlePromptDeliver(order)}
-                      className={cn(
-                        "w-full h-11 text-xs font-bold gap-2 rounded-xl cursor-pointer active:scale-[0.98] transition-all shadow-sm",
-                        isReady 
-                          ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-500/20" 
-                          : "bg-background border border-border hover:bg-muted text-foreground"
-                      )}
+                      disabled={isMarkingDelivered && loadingOrderId === order.id}
+                      className="w-full h-11 text-xs font-bold gap-2 rounded-xl cursor-pointer active:scale-[0.98] transition-all bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
                     >
-                      <CheckCircle2 className={cn("w-4 h-4", isReady ? "text-white" : "text-primary")} />
-                      <span>{isReady ? 'Mark Delivered to Customer' : 'Mark Delivered (Early Override)'}</span>
-                      <ArrowRight className="w-3.5 h-3.5 ml-auto opacity-70" />
+                      {isMarkingDelivered && loadingOrderId === order.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-white" />
+                      ) : (
+                        <CheckCircle2 className="w-4 h-4 text-white" />
+                      )}
+                      <span>Delivered Successfully</span>
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => handlePromptUndelivered(order)}
+                      disabled={isMarkingUndelivered && loadingOrderId === order.id}
+                      className="w-full h-11 text-xs font-bold gap-2 rounded-xl cursor-pointer active:scale-[0.98] transition-all border-red-500/30 text-red-600 dark:text-red-400 hover:bg-red-500/10"
+                    >
+                      {isMarkingUndelivered && loadingOrderId === order.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-red-500" />
+                      ) : (
+                        <AlertTriangle className="w-4 h-4 text-red-500" />
+                      )}
+                      <span>Not Delivered / Issue</span>
                     </Button>
                   </div>
                 )}
@@ -400,7 +603,7 @@ export function DeliveryPortalClient({ initialOrders }: DeliveryPortalClientProp
               <div className="flex justify-between items-center pt-1 border-t border-border/40">
                 <span className="text-muted-foreground text-[11px]">Amount:</span>
                 <span className="font-mono font-bold text-foreground">
-                  ₹{confirmingOrder.financials.grossAmount} ({confirmingOrder.paymentMethod} - {confirmingOrder.paymentStatus})
+                  ₹{confirmingOrder?.financials?.grossAmount ?? 0} ({confirmingOrder?.paymentMethod ?? 'COD'} - {confirmingOrder?.paymentStatus ?? 'PENDING'})
                 </span>
               </div>
             </div>
@@ -422,6 +625,70 @@ export function DeliveryPortalClient({ initialOrders }: DeliveryPortalClientProp
             >
               <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
               <span>Yes, Delivered</span>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Undelivered / Issue Reason Dialog */}
+      <Dialog open={!!undeliveredOrder} onOpenChange={(open) => !open && setUndeliveredOrder(null)}>
+        <DialogContent className="max-w-sm rounded-2xl p-5 border border-border/80 shadow-2xl bg-card">
+          <DialogHeader className="space-y-2">
+            <div className="w-10 h-10 rounded-full bg-red-500/10 text-red-600 dark:text-red-400 flex items-center justify-center mx-auto border border-red-500/20 shadow-xs">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <DialogTitle className="text-center text-base font-bold text-foreground">
+              Report Delivery Issue
+            </DialogTitle>
+            <DialogDescription className="text-center text-xs text-muted-foreground">
+              Specify why order <strong className="font-mono text-foreground">{undeliveredOrder?.orderNumber}</strong> could not be delivered to <strong className="text-foreground">{undeliveredOrder?.customerName}</strong>.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2 my-2">
+            <label className="text-[10px] font-mono font-bold uppercase text-muted-foreground block">
+              Select Reason:
+            </label>
+            {[
+              'Customer Unreachable / Phone Switched Off',
+              'Customer Refused / Cancelled at Doorstep',
+              'Incorrect / Incomplete Address',
+              'Customer Not Available at Location',
+              'Payment / Cash Issue (Refused to Pay)',
+              'Accident / Vehicle Breakdown',
+            ].map((r) => (
+              <button
+                type="button"
+                key={r}
+                onClick={() => setFailReason(r)}
+                className={cn(
+                  "w-full text-left p-2.5 rounded-xl border text-xs transition-all cursor-pointer",
+                  failReason === r 
+                    ? "bg-red-500/10 border-red-500/40 text-red-700 dark:text-red-400 font-bold" 
+                    : "bg-background border-border hover:bg-muted text-foreground"
+                )}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+
+          <DialogFooter className="grid grid-cols-2 gap-2 mt-2 sm:space-x-0">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setUndeliveredOrder(null)}
+              className="w-full text-xs h-10 rounded-xl border-border/80 hover:bg-muted font-semibold"
+            >
+              Back
+            </Button>
+            <Button
+              type="button"
+              onClick={handleConfirmUndelivered}
+              disabled={isMarkingUndelivered}
+              className="w-full text-xs h-10 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold shadow-xs cursor-pointer"
+            >
+              <span>Submit & Return</span>
             </Button>
           </DialogFooter>
         </DialogContent>

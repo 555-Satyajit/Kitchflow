@@ -209,7 +209,7 @@ export function StockLedgerTanStackTable({ stockLedger }: StockLedgerTanStackTab
   return (
     <div className="space-y-3">
       {/* Search & Export Action Strip */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5">
         <div className="relative flex-1 max-w-sm">
           <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
@@ -221,12 +221,12 @@ export function StockLedgerTanStackTable({ stockLedger }: StockLedgerTanStackTab
           />
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Reason Code Pill Quick Selector */}
           <select
             value={reasonFilter}
             onChange={(e) => setReasonFilter(e.target.value)}
-            className="h-9 px-2.5 text-xs font-semibold rounded-xl border border-border/70 bg-background shadow-2xs focus:outline-none"
+            className="h-9 px-2.5 text-xs font-semibold rounded-xl border border-border/70 bg-background text-foreground shadow-2xs focus:outline-none cursor-pointer"
           >
             <option value="ALL">All Audit Reasons</option>
             <option value="WASTAGE_SPOILAGE">Wastage & Spoilage</option>
@@ -259,12 +259,12 @@ export function StockLedgerTanStackTable({ stockLedger }: StockLedgerTanStackTab
               link.click();
               document.body.removeChild(link);
             }}
-            className="h-9 px-3 text-xs font-semibold rounded-xl gap-1.5 border-border/80 bg-background/80 hover:bg-muted active:scale-[0.98] transition-all cursor-pointer shadow-2xs"
+            className="h-9 px-3 text-xs font-semibold rounded-xl gap-1.5 border-border/80 bg-background/80 hover:bg-muted active:scale-[0.98] transition-all cursor-pointer shadow-2xs whitespace-nowrap"
           >
             <Download className="w-3.5 h-3.5 text-muted-foreground" />
             <span>Export CSV</span>
           </Button>
-          <Badge variant="outline" className="font-mono text-[11px] h-9 px-2.5 rounded-xl border-border/80 bg-muted/40">
+          <Badge variant="outline" className="font-mono text-[11px] h-9 px-2.5 rounded-xl border-border/80 bg-muted/40 shrink-0 whitespace-nowrap">
             {filteredData.length} Logs
           </Badge>
         </div>

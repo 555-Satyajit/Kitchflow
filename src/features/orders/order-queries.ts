@@ -1,6 +1,5 @@
 import 'server-only';
 import { prisma } from '@/lib/prisma';
-import { INITIAL_ORDERS, INITIAL_BRANDS, INITIAL_MENU_ITEMS } from '@/lib/mockData';
 import { Order, Brand, MenuItem } from '@/types';
 import { getCurrentKitchenContext } from '@/lib/session';
 
@@ -87,6 +86,10 @@ export async function getOrdersData(kitchenId?: string): Promise<{
       createdAt: o.createdAt.toISOString(),
       acknowledgedAt: o.acknowledgedAt?.toISOString(),
       readyAt: o.readyAt?.toISOString(),
+      dispatchedAt: o.dispatchedAt?.toISOString(),
+      deliveredAt: o.deliveredAt?.toISOString(),
+      undeliveredAt: o.undeliveredAt?.toISOString(),
+      undeliveredReason: o.undeliveredReason ?? undefined,
       checklist: (o.checklist as unknown as Order['checklist']) ?? {
         cutlery: false,
         saucesDips: false,

@@ -5,8 +5,9 @@ import { OrdersQueueView } from '@/components/orders/OrdersQueueView';
 import { MarginModal } from '@/components/margins/MarginModal';
 import { ManualOrderModal } from '@/components/orders/ManualOrderModal';
 import { useKitchen } from '@/context/KitchenContext';
-import { Order, Brand, MenuItem, OrderStatus } from '@/types';
-import { useLiveOrders } from '../hooks/useLiveOrders';
+import { Order, Brand, MenuItem, OrderStatus, Channel } from '@/types';
+import { useKitchenStore, selectLiveQueueOrders } from '@/stores/useKitchenStore';
+import { useShallow } from 'zustand/react/shallow';
 
 interface OrdersSectionClientProps {
   initialOrders: Order[];
@@ -30,11 +31,21 @@ export function OrdersSectionClient({
     setUserRole,
     inspectingOrder,
     setInspectingOrder,
-    handleSimulateNewOrder,
-    handleCreateManualOrder,
   } = useKitchen();
 
-  const { orders, updateStatus } = useLiveOrders(kitchenId, initialOrders);
+  const storeOrders = useKitchenStore(useShallow(selectLiveQueueOrders));
+  const bumpOrderStatus = useKitchenStore((s) => s.bumpOrderStatus);
+  const setBulkOrders = useKitchenStore((s) => s.setBulkOrders);
+
+  // Hydrate local-first store on initial load if SSR has data
+  React.useEffect(() => {
+    if (initialOrders && initialOrders.length > 0) {
+      setBulkOrders(initialOrders);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const orders = storeOrders;
 
   // Sync brands and menu items from server
   React.useEffect(() => {
@@ -44,12 +55,84 @@ export function OrdersSectionClient({
     if (initialMenuItems) {
       setMenuItems(initialMenuItems);
     }
-  }, [initialBrands, initialMenuItems, setBrands, setMenuItems]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [isManualOrderOpen, setIsManualOrderOpen] = useState(false);
 
-  const onUpdateStatus = (orderId: string, status: OrderStatus) => {
-    updateStatus({ orderId, status });
+  const handleManualOrder = async (params: {
+    brandId: string;
+    channel: Channel;
+    customerName: string;
+    customerPhone?: string;
+    customerAddress?: string;
+    items: { menuItemId: string; quantity: number }[];
+  }) => {
+    const brand = (brands.length ? brands : initialBrands).find((b) => b.id === params.brandId) || (brands.length ? brands : initialBrands)[0];
+    const availableMenuItems = menuItems.length ? menuItems : initialMenuItems;
+    const tempOrderId = crypto.randomUUID();
+    const prefix = params.channel === 'WALK_IN' ? 'POS' : params.channel === 'DIRECT' ? 'DIR' : 'ORD';
+    const tempOrderNumber = `#${prefix}-${Math.floor(100 + Math.random() * 900)}`;
+
+    let itemSubtotal = 0;
+    const mappedItems = params.items.map((it, idx) => {
+      const mi = availableMenuItems.find((m) => m.id === it.menuItemId);
+      const price = mi ? mi.sellingPrice : 150;
+      itemSubtotal += price * it.quantity;
+      return {
+        id: `item-${tempOrderId}-${idx}`,
+        menuItemId: it.menuItemId,
+        name: mi?.name || 'Item',
+        station: mi?.station || 'GRILL',
+        quantity: it.quantity,
+        price,
+        stationDone: false,
+      };
+    });
+
+    const finalOrder: Order = {
+      id: tempOrderId,
+      orderNumber: tempOrderNumber,
+      channel: params.channel,
+      brandId: brand?.id || 'default',
+      brandName: brand?.name || 'Kitchen',
+      customerName: params.customerName || 'Direct Customer',
+      customerPhone: params.customerPhone,
+      customerAddress: params.customerAddress,
+      status: 'PREPARING',
+      paymentMethod: 'CASH',
+      paymentStatus: 'PAID',
+      targetPrepMinutes: 12,
+      createdAt: new Date().toISOString(),
+      acknowledgedAt: new Date().toISOString(),
+      items: mappedItems,
+      kitchenId,
+      checklist: {
+        cutlery: false,
+        saucesDips: false,
+        napkins: false,
+        tamperSeal: false,
+        beverageSeparated: false,
+      },
+      financials: {
+        grossAmount: itemSubtotal,
+        discount: 0,
+        commissionRate: 0,
+        commissionAmount: 0,
+        taxes: 0,
+        packagingFeeCollected: params.channel === 'WALK_IN' ? 0 : 25,
+        ingredientCost: 0,
+        packagingCost: params.channel === 'WALK_IN' ? 0 : 25,
+        netMargin: itemSubtotal,
+        netMarginPercentage: 100,
+      },
+    };
+
+    await useKitchenStore.getState().punchOrder(finalOrder);
+  };
+
+  const onUpdateStatus = async (orderId: string, status: OrderStatus) => {
+    await bumpOrderStatus(orderId, status);
   };
 
   // Guard: Cook station mode
@@ -106,7 +189,6 @@ export function OrdersSectionClient({
         orders={orders}
         onUpdateStatus={onUpdateStatus}
         onInspectFinancials={(o) => setInspectingOrder(o)}
-        onSimulateNewOrder={handleSimulateNewOrder}
         onOpenManualOrder={() => setIsManualOrderOpen(true)}
       />
       <ManualOrderModal
@@ -114,7 +196,7 @@ export function OrdersSectionClient({
         onOpenChange={setIsManualOrderOpen}
         brands={brands.length ? brands : initialBrands}
         menuItems={menuItems.length ? menuItems : initialMenuItems}
-        onCreateOrder={handleCreateManualOrder}
+        onCreateOrder={handleManualOrder}
       />
       <MarginModal
         order={inspectingOrder}

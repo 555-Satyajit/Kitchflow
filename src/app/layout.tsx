@@ -7,6 +7,7 @@ import { KitchenProvider } from "@/context/KitchenContext";
 import { AppHeader } from "@/components/mobile/AppHeader";
 import { NavigationBar } from "@/components/mobile/NavigationBar";
 import { ServiceWorkerRegister } from "@/components/pwa/ServiceWorkerRegister";
+import { LocalFirstSyncSupervisor } from "@/components/LocalFirstSyncSupervisor";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -53,8 +54,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
-      <body className="min-h-screen bg-background text-foreground antialiased font-sans">
+    <html lang="en" suppressHydrationWarning className={`${inter.variable} ${jetbrainsMono.variable}`}>
+      <body suppressHydrationWarning className="min-h-screen bg-background text-foreground antialiased font-sans">
         <QueryProvider>
           <KitchenProvider>
             <React.Suspense fallback={<div className="h-14 border-b border-border bg-background" />}>
@@ -65,6 +66,9 @@ export default function RootLayout({
             </main>
             <React.Suspense fallback={null}>
               <NavigationBar />
+            </React.Suspense>
+            <React.Suspense fallback={null}>
+              <LocalFirstSyncSupervisor />
             </React.Suspense>
             <ServiceWorkerRegister />
           </KitchenProvider>

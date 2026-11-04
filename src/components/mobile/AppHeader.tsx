@@ -32,13 +32,16 @@ import {
   Building2,
   Loader2,
   History,
-  Users
+  Users,
+  ShoppingBag,
+  Wifi,
+  CloudUpload
 } from 'lucide-react'
 import { signOutFromSupabase } from '@/actions/auth'
 import { getOrganizationKitchensAction, switchActiveKitchenAction } from '@/actions/settings'
-import { getNavCountsAction, NavCountsResult } from '@/features/orders/order-actions'
+import { NavCountsResult } from '@/features/orders/order-actions'
 import { useKitchen } from '@/context/KitchenContext'
-import { useNavCounts } from '@/hooks/useNavCounts'
+import { useKitchenStore, selectNavCounts } from '@/stores/useKitchenStore'
 import { useOutlets } from '@/hooks/useOutlets'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
@@ -95,10 +98,7 @@ export function AppHeader({
     pausedPlatforms, 
     handleToggleEmergencyPause, 
     brands, 
-    orders, 
-    isOrdersLoaded,
-    navCounts,
-    ingredients,
+    ingredients, 
     menuItems,
     purchaseOrders,
     handleReceivePurchaseOrder,
@@ -120,6 +120,7 @@ export function AppHeader({
   const [isWastageOpen, setIsWastageOpen] = useState(false)
   const [isDispatchChecklistOpen, setIsDispatchChecklistOpen] = useState(false)
   const [isAddKitchenOpen, setIsAddKitchenOpen] = useState(false)
+  const [isSigningOut, setIsSigningOut] = useState(false)
   const [mounted, setMounted] = useState(false)
   const [profileName, setProfileName] = useState(initialName || 'Sampad Jena')
   const [profileRole, setProfileRole] = useState<'owner' | 'manager' | 'kitchen_staff'>(initialRole || 'owner')
@@ -139,8 +140,9 @@ export function AppHeader({
   const storeName = tanstackActiveOutletName || 'All Outlets'
   const outlets = tanstackOutlets
 
-  // TanStack Query authoritative real-time nav counts (must be called before any conditional early returns)
-  const { data: tanstackCounts } = useNavCounts(activeOutletId, initialNavCounts || navCounts)
+  // Authoritative real-time nav counts derived directly from local-first store
+  const navBadgeCounts = useKitchenStore(selectNavCounts)
+  const pendingOutboxCount = useKitchenStore((s) => s.pendingOutboxCount)
 
   useEffect(() => {
     setMounted(true)
@@ -181,7 +183,8 @@ export function AppHeader({
     } catch (e) {
       // Ignored
     }
-  }, [setUserRole])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleSelectOutlet = (outletId: string, outletName: string) => {
     selectOutlet(outletId, outletName)
@@ -199,19 +202,14 @@ export function AppHeader({
 
   if (pathname === '/login') return null
 
-  // Authoritative server badge counts with TanStack Query primary source and in-memory fallback
-  const authoritativeCounts = tanstackCounts || initialNavCounts || navCounts
-  const liveOrderCount = authoritativeCounts ? authoritativeCounts.ordersCount : orders.length
-  const kdsPendingCount = authoritativeCounts 
-    ? authoritativeCounts.kdsCount 
-    : orders.filter((o) => o.status === 'ACCEPTED' || o.status === 'PREPARING').length
-  const packingPendingCount = authoritativeCounts 
-    ? authoritativeCounts.packingCount 
-    : orders.filter((o) => o.status === 'PREPARING' || o.status === 'READY').length
+  // Local-First pipeline single source of truth badges
+  const liveOrderCount = navBadgeCounts.ordersCount
+  const kdsPendingCount = navBadgeCounts.kdsCount
+  const packingPendingCount = navBadgeCounts.packingCount
   const lowStockCount = ingredients.filter((i) => i.currentStock <= i.minThreshold).length
 
-  // Nav is ready immediately if either orders or navCounts are populated
-  const isNavReady = isOrdersLoaded || orders.length > 0 || authoritativeCounts !== null
+  // Nav is ready immediately
+  const isNavReady = true
 
   // Hindi localization labels dictionary
   const t = {
@@ -253,7 +251,10 @@ export function AppHeader({
 
   return (
     <>
-      <header className="sticky top-0 z-40 bg-background/90 backdrop-blur-md border-b border-border/80 safe-area-pt relative">
+      <header 
+        suppressHydrationWarning
+        className="sticky top-0 z-40 bg-background/90 backdrop-blur-md border-b border-border/80 safe-area-pt relative"
+      >
         {/* Subtle iOS Top Progress Bar for instant outlet switching feedback */}
         {isSwitchingOutlet && (
           <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-primary/20 overflow-hidden z-50">
@@ -453,9 +454,18 @@ export function AppHeader({
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                          <span className="text-[10px] font-mono font-bold text-emerald-700 dark:text-emerald-400">Online</span>
+                        <div className="flex items-center gap-1.5">
+                          {pendingOutboxCount > 0 ? (
+                            <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400">
+                              <CloudUpload className="w-3 h-3 animate-bounce" />
+                              <span className="text-[10px] font-mono font-bold">{pendingOutboxCount} Syncing</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              <span className="text-[10px] font-mono font-bold text-emerald-700 dark:text-emerald-400">Synced</span>
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -508,7 +518,7 @@ export function AppHeader({
 
                             <SelectContent 
                               position="popper" 
-                              className="w-[calc(100vw-2.5rem)] max-w-sm rounded-2xl bg-popover/95 backdrop-blur-md border border-border/80 shadow-2xl p-1.5 z-50"
+                              className="w-[calc(100vw-2.5rem)] max-w-sm rounded-2xl bg-popover/95 backdrop-blur-md border border-border/80 shadow-2xl p-1.5 z-50 max-h-[360px]"
                             >
                               <SelectGroup>
                                 <SelectLabel className="px-2 py-1 text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground border-b border-border/50 flex justify-between items-center">
@@ -529,22 +539,20 @@ export function AppHeader({
                                   </div>
                                 </SelectItem>
 
-                                <div className="max-h-56 overflow-y-auto space-y-0.5 py-0.5">
-                                  {outlets.map((outlet) => (
-                                    <SelectItem
-                                      key={outlet.id}
-                                      value={outlet.id}
-                                      className="py-2 px-2.5 rounded-xl cursor-pointer hover:bg-muted/70 focus:bg-primary/10 focus:text-primary data-[state=checked]:bg-primary/10 data-[state=checked]:text-primary text-xs"
-                                    >
-                                      <div className="flex items-center justify-between w-full gap-2">
-                                        <span className="truncate">{outlet.name}</span>
-                                        <span className="text-[9px] font-semibold text-muted-foreground shrink-0">
-                                          {outlet.brandCount} Brands
-                                        </span>
-                                      </div>
-                                    </SelectItem>
-                                  ))}
-                                </div>
+                                {outlets.map((outlet) => (
+                                  <SelectItem
+                                    key={outlet.id}
+                                    value={outlet.id}
+                                    className="py-2 px-2.5 rounded-xl cursor-pointer hover:bg-muted/70 focus:bg-primary/10 focus:text-primary data-[state=checked]:bg-primary/10 data-[state=checked]:text-primary text-xs my-0.5"
+                                  >
+                                    <div className="flex items-center justify-between w-full gap-2">
+                                      <span className="truncate">{outlet.name}</span>
+                                      <span className="text-[9px] font-semibold text-muted-foreground shrink-0">
+                                        {outlet.brandCount} Brands
+                                      </span>
+                                    </div>
+                                  </SelectItem>
+                                ))}
 
                                 {(profileRole === 'owner' || profileRole === 'manager') && (
                                   <div className="pt-1 mt-1 border-t border-border/50">
@@ -575,6 +583,35 @@ export function AppHeader({
                       </span>
 
                       <div className="rounded-2xl border border-border/80 bg-card overflow-hidden divide-y divide-border/50 shadow-xs">
+                        {/* POS Billing Counter Link */}
+                        {(profileRole === 'owner' || userPermissions.includes('pos')) && (
+                          <Link
+                            href="/pos"
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className="flex items-center justify-between p-3.5 hover:bg-muted/40 transition-colors cursor-pointer group"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/20 shadow-2xs">
+                                <ShoppingBag className="w-4 h-4" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <p className="text-xs font-bold text-foreground group-hover:text-primary transition-colors">
+                                    POS Billing Counter
+                                  </p>
+                                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                                    0ms Local
+                                  </span>
+                                </div>
+                                <p className="text-[10px] text-muted-foreground truncate">
+                                  Punch counter takeaway, direct fleet, and generate KOT
+                                </p>
+                              </div>
+                            </div>
+                            <ChevronRight className="w-4 h-4 text-muted-foreground/60 shrink-0" />
+                          </Link>
+                        )}
+
                         {/* Order History Link - Gated by history or orders permission */}
                         {(profileRole === 'owner' || userPermissions.includes('history') || userPermissions.includes('orders')) && (
                           <Link
@@ -837,19 +874,43 @@ export function AppHeader({
                   <div className="p-4 border-t border-border/70 space-y-2 bg-muted/20">
                     <button
                       type="button"
+                      disabled={isSigningOut}
                       onClick={async () => {
-                        setIsMobileMenuOpen(false)
+                        setIsSigningOut(true)
                         try {
                           localStorage.removeItem('kitchflow_active_staff_name')
                           localStorage.removeItem('kitchflow_active_staff_role')
                           localStorage.removeItem('kitchflow_active_staff_permissions')
                         } catch {}
-                        await signOutFromSupabase()
+                        try {
+                          useKitchenStore.getState().resetStore?.()
+                        } catch {}
+
+                        // Parallelize client & server sign-out with a 1.2s timeout safeguard
+                        const browserClient = createClient()
+                        await Promise.race([
+                          Promise.allSettled([
+                            signOutFromSupabase(),
+                            browserClient.auth.signOut().catch(() => {}),
+                          ]),
+                          new Promise((resolve) => setTimeout(resolve, 1200)),
+                        ])
+
+                        window.location.replace('/login?logout=true')
                       }}
-                      className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl border border-destructive/30 bg-destructive/10 hover:bg-destructive/20 text-destructive text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                      className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border border-destructive/30 bg-destructive/10 hover:bg-destructive/20 text-destructive text-xs font-bold transition-all cursor-pointer shadow-2xs disabled:opacity-60 disabled:cursor-not-allowed"
                     >
-                      <LogOut className="w-3.5 h-3.5" />
-                      <span>Sign Out from Kitchen Station</span>
+                      {isSigningOut ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                          <span>Signing Out Station...</span>
+                        </>
+                      ) : (
+                        <>
+                          <LogOut className="w-3.5 h-3.5" />
+                          <span>Sign Out from Kitchen Station</span>
+                        </>
+                      )}
                     </button>
                     <p className="text-[10px] text-muted-foreground font-mono text-center">
                       KitchFlow OS • v2.4 Multi-Brand

@@ -45,6 +45,26 @@ export async function updateSession(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname
   const isLoginPage = pathname === '/login'
+  const isLogoutIntent = isLoginPage && request.nextUrl.searchParams.get('logout') === 'true'
+
+  if (isLogoutIntent) {
+    // Explicit sign out request: strip terminal session and Supabase auth cookies
+    supabaseResponse.cookies.set('kitchflow_staff_session', '', {
+      path: '/',
+      httpOnly: true,
+      maxAge: 0,
+      expires: new Date(0),
+    })
+    supabaseResponse.cookies.set('kitchflow_active_kitchen_id', '', {
+      path: '/',
+      maxAge: 0,
+      expires: new Date(0),
+    })
+    try {
+      await supabase.auth.signOut()
+    } catch {}
+    return supabaseResponse
+  }
 
   // Public routes that anyone can access without being logged in
   const isPublicRoute =
@@ -65,8 +85,8 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // Enforce granular route permissions for non-owner staff
-  if (staffSession && staffSession.role !== 'owner' && !isPublicRoute) {
+  // Enforce granular route permissions for non-owner staff (only when not logged in as full Supabase user)
+  if (!user && staffSession && staffSession.role !== 'owner' && !isPublicRoute) {
     const permissions: string[] = Array.isArray(staffSession.permissions)
       ? staffSession.permissions
       : ['orders', 'kds', 'packing']
@@ -100,12 +120,12 @@ export async function updateSession(request: NextRequest) {
   // If user is already authenticated and visits /login, redirect to /pos or /orders
   if (isAuthenticated && isLoginPage) {
     const url = request.nextUrl.clone()
-    if (staffSession && staffSession.role !== 'owner') {
+    if (!user && staffSession && staffSession.role !== 'owner') {
       const perms: string[] = Array.isArray(staffSession.permissions) ? staffSession.permissions : []
       const fallback = ['/orders', '/kds', '/packing', '/pos'].find(r => perms.includes(r.replace('/', ''))) || '/orders'
       url.pathname = fallback
     } else {
-      url.pathname = hasStaffSession ? '/pos' : '/orders'
+      url.pathname = !user && hasStaffSession ? '/pos' : '/orders'
     }
     return NextResponse.redirect(url)
   }

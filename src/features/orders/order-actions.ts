@@ -4,10 +4,14 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { revalidateTag } from 'next/cache';
 import { orderTags } from './order-cache';
-import { Channel, Order, OrderStatus, PaymentMethod, PaymentStatus } from '@/types';
+import { kdsTags } from '@/features/kds/kds-cache';
+import { packingTags } from '@/features/packing/packing-cache';
+import { inventoryTags } from '@/features/inventory/inventory-cache';
+import { Channel, Order, OrderStatus, PaymentMethod, PaymentStatus, Brand, MenuItem } from '@/types';
 import { calculateOrderFinancials } from '@/lib/finance';
+import { INITIAL_BRANDS, INITIAL_MENU_ITEMS } from '@/lib/mockData';
 
-export type ActionResult<T = void> = 
+export type ActionResult<T = void> =
   | ([T] extends [void] ? { ok: true; data?: undefined } : { ok: true; data: T })
   | { ok: false; error: string };
 
@@ -18,10 +22,10 @@ export async function updateOrderStatusAction(params: {
 }): Promise<ActionResult> {
   try {
     const session = await getCurrentKitchenContext();
-    const canUpdate = session.role === 'owner' || 
-      session.permissions?.includes('orders') || 
-      session.permissions?.includes('kds') || 
-      session.permissions?.includes('packing') || 
+    const canUpdate = session.role === 'owner' ||
+      session.permissions?.includes('orders') ||
+      session.permissions?.includes('kds') ||
+      session.permissions?.includes('packing') ||
       session.permissions?.includes('pos');
     if (!canUpdate) {
       return { ok: false, error: 'Unauthorized: Operational permission required' };
@@ -32,6 +36,8 @@ export async function updateOrderStatusAction(params: {
     const dataToUpdate: Prisma.OrderUpdateInput = { status };
     if (status === 'READY') {
       dataToUpdate.readyAt = new Date();
+    } else if (status === 'DISPATCHED') {
+      dataToUpdate.dispatchedAt = new Date();
     }
 
     const allowedKitchenIds = session.kitchenIds && session.kitchenIds.length > 0
@@ -58,7 +64,12 @@ export async function updateOrderStatusAction(params: {
     const targetKitchenId = kitchenId || existingOrder.kitchenId;
     if (targetKitchenId) {
       revalidateTag(orderTags.kitchen(targetKitchenId), 'max');
+      revalidateTag(kdsTags.kitchen(targetKitchenId), 'max');
+      revalidateTag(packingTags.kitchen(targetKitchenId), 'max');
     }
+    revalidateTag(orderTags.all, 'max');
+    revalidateTag(kdsTags.all, 'max');
+    revalidateTag(packingTags.all, 'max');
 
     return { ok: true };
   } catch (error) {
@@ -97,28 +108,43 @@ export async function createManualOrderAction(params: {
       items,
     } = params;
 
+    // Resolve brand first to get its bound kitchenId if not explicitly passed
+    let targetBrand = await prisma.brand.findUnique({
+      where: { id: brandId },
+      select: { id: true, kitchenId: true },
+    });
+
     // Auto-resolve kitchen within authenticated user scope
-    if (!kitchenId || kitchenId === 'kitch-koramangala-01' || kitchenId === 'default') {
-      kitchenId = session.kitchenId === 'ALL' ? session.kitchenIds?.[0] : session.kitchenId;
+    if (!kitchenId || kitchenId === 'ALL' || kitchenId === 'default' || kitchenId === 'kitch-koramangala-01') {
+      if (targetBrand?.kitchenId) {
+        kitchenId = targetBrand.kitchenId;
+      } else {
+        kitchenId = session.kitchenId === 'ALL' ? session.kitchenIds?.[0] : session.kitchenId;
+      }
     }
 
     if (!kitchenId) {
       return { ok: false, error: 'Active kitchen facility not found' };
     }
 
-    // Ensure valid brandId
-    const brandExists = await prisma.brand.findUnique({
-      where: { id: brandId },
-      select: { id: true },
-    });
+    // Permission Guard: verify user has permission for this kitchen
+    const allowedKitchenIds = session.kitchenIds && session.kitchenIds.length > 0
+      ? session.kitchenIds
+      : (session.kitchenId && session.kitchenId !== 'ALL' ? [session.kitchenId] : []);
 
-    if (!brandExists) {
+    if (allowedKitchenIds.length > 0 && !allowedKitchenIds.includes(kitchenId) && session.role !== 'owner') {
+      return { ok: false, error: 'Unauthorized: You do not have permission for this kitchen outlet' };
+    }
+
+    // Ensure valid brandId under this kitchen
+    if (!targetBrand || targetBrand.kitchenId !== kitchenId) {
       const fallbackBrand = await prisma.brand.findFirst({
         where: { kitchenId },
-        select: { id: true },
+        select: { id: true, kitchenId: true },
       });
       if (fallbackBrand) {
         brandId = fallbackBrand.id;
+        targetBrand = fallbackBrand;
       }
     }
 
@@ -172,8 +198,31 @@ export async function createManualOrderAction(params: {
       packagingMaterialCost,
     });
 
-    const orderNumber = `ORD-${Date.now().toString().slice(-4)}`;
+    // 1. Generate clean sequential token number for today's shift (e.g., ORD-001, ORD-002)
+    // Uses atomic database procedure with row-level locks, with fallback to count if function not yet applied
+    let orderNumber: string;
+    try {
+      const seqResult = await prisma.$queryRaw<Array<{ next_token: string }>>`
+        SELECT public.get_next_daily_kot_number(${kitchenId}::uuid, 'ORD') as next_token
+      `;
+      if (seqResult && seqResult.length > 0 && seqResult[0].next_token) {
+        orderNumber = seqResult[0].next_token;
+      } else {
+        throw new Error('Sequence returned empty');
+      }
+    } catch {
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      const todayOrderCount = await prisma.order.count({
+        where: {
+          kitchenId,
+          createdAt: { gte: startOfToday },
+        },
+      });
+      orderNumber = `ORD-${String(todayOrderCount + 1).padStart(3, '0')}`;
+    }
 
+    // 2. Create the Order and its items
     const newOrder = await prisma.order.create({
       data: {
         kitchenId,
@@ -202,6 +251,100 @@ export async function createManualOrderAction(params: {
       },
     });
 
+    // 3. ASYNCHRONOUS BACKGROUND OUTBOX: Process BOM ingredient depletion & ledger off the hot path
+    // Petpooja architecture: The order is already confirmed. Heavy inventory loops run in the background!
+    (async () => {
+      try {
+        const ingredientUsageMap = new Map<string, { totalQty: number; unit: any }>();
+        for (const cartItem of items) {
+          const menuItem = dbMenuItems.find((m) => m.id === cartItem.menuItemId);
+          if (menuItem?.recipe && menuItem.recipe.length > 0) {
+            for (const rec of menuItem.recipe) {
+              const needed = rec.quantity * cartItem.quantity;
+              const existing = ingredientUsageMap.get(rec.ingredientId);
+              if (existing) {
+                existing.totalQty += needed;
+              } else {
+                ingredientUsageMap.set(rec.ingredientId, {
+                  totalQty: needed,
+                  unit: rec.ingredient?.unit || 'g',
+                });
+              }
+            }
+          }
+        }
+
+        if (ingredientUsageMap.size > 0) {
+          for (const [ingredientId, usage] of ingredientUsageMap.entries()) {
+            const currentIng = await prisma.ingredient.findUnique({
+              where: { id: ingredientId },
+              select: { id: true, currentStock: true, minThreshold: true, unit: true },
+            });
+
+            if (currentIng) {
+              const previousStock = currentIng.currentStock;
+              const actualDeduction = usage.totalQty;
+
+              const updatedIng = await prisma.ingredient.update({
+                where: { id: ingredientId },
+                data: {
+                  currentStock: {
+                    decrement: actualDeduction,
+                  },
+                },
+              });
+
+              const finalNewStock = updatedIng.currentStock;
+
+              // Record in append-only stock ledger
+              await prisma.stockLedgerEntry.create({
+                data: {
+                  ingredientId,
+                  orderId: newOrder.id,
+                  previousStock,
+                  delta: -actualDeduction,
+                  balanceAfter: finalNewStock,
+                  unit: currentIng.unit,
+                  reason: 'RECIPE_AUTO_CONSUMPTION',
+                  notes: `Auto-deducted for Order #${newOrder.orderNumber}`,
+                },
+              });
+
+              // Auto-86 check: if stock is depleted below recipe or minThreshold
+              const isCritical = finalNewStock <= 0 || finalNewStock < currentIng.minThreshold;
+              if (isCritical) {
+                const dependentRecipes = await prisma.recipeIngredient.findMany({
+                  where: { ingredientId },
+                  select: {
+                    menuItemId: true,
+                    quantity: true,
+                    menuItem: { select: { isAvailable: true } },
+                  },
+                });
+
+                for (const dep of dependentRecipes) {
+                  if (dep.menuItem.isAvailable && (isCritical || finalNewStock < dep.quantity)) {
+                    await prisma.menuItem.update({
+                      where: { id: dep.menuItemId },
+                      data: {
+                        isAvailable: false,
+                        swiggyOnline: false,
+                        zomatoOnline: false,
+                        lastSyncedAt: new Date(),
+                      },
+                    });
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (bgErr) {
+        console.warn('[Background Inventory Worker] Non-blocking depletion notice:', bgErr);
+      }
+    })();
+
+    // Invalidate order and KDS caches immediately
     revalidateTag(orderTags.kitchen(kitchenId), 'max');
     revalidateTag(`kds:${kitchenId}:orders`, 'max');
     revalidateTag('packing', 'max');
@@ -374,7 +517,7 @@ export async function getLatestOrdersSnapshotAction(kitchenId?: string): Promise
     startOfToday.setHours(0, 0, 0, 0);
 
     const dbOrders = await prisma.order.findMany({
-      where: { 
+      where: {
         kitchenId: kitchenWhere,
         OR: [
           // Active orders
@@ -412,6 +555,10 @@ export async function getLatestOrdersSnapshotAction(kitchenId?: string): Promise
       version: (o as any).version ?? 0,
       acknowledgedAt: o.acknowledgedAt?.toISOString(),
       readyAt: o.readyAt?.toISOString(),
+      dispatchedAt: o.dispatchedAt?.toISOString(),
+      deliveredAt: o.deliveredAt?.toISOString(),
+      undeliveredAt: o.undeliveredAt?.toISOString(),
+      undeliveredReason: o.undeliveredReason ?? undefined,
       checklist: (o.checklist as unknown as Order['checklist']) ?? {
         cutlery: false,
         saucesDips: false,
@@ -477,7 +624,7 @@ export async function getOrderHistoryAction(
 ): Promise<ActionResult<OrderHistoryPayload>> {
   try {
     const session = await getCurrentKitchenContext();
-    const canAccess = session.role === 'owner' || 
+    const canAccess = session.role === 'owner' ||
       session.role === 'admin' ||
       session.permissions?.includes('history') ||
       session.permissions?.includes('orders');
@@ -593,6 +740,10 @@ export async function getOrderHistoryAction(
       version: (o as any).version ?? 0,
       acknowledgedAt: o.acknowledgedAt?.toISOString(),
       readyAt: o.readyAt?.toISOString(),
+      dispatchedAt: o.dispatchedAt?.toISOString(),
+      deliveredAt: o.deliveredAt?.toISOString(),
+      undeliveredAt: o.undeliveredAt?.toISOString(),
+      undeliveredReason: o.undeliveredReason ?? undefined,
       checklist: (o.checklist as unknown as Order['checklist']) ?? {
         cutlery: false,
         saucesDips: false,
@@ -643,6 +794,93 @@ export async function getOrderHistoryAction(
     const message = error instanceof Error ? error.message : 'Failed to retrieve order history';
     console.error('Error in getOrderHistoryAction:', error);
     return { ok: false, error: message };
+  }
+}
+
+export async function getPosCatalogAction(kitchenId?: string): Promise<
+  ActionResult<{ brands: Brand[]; menuItems: MenuItem[] }>
+> {
+  try {
+    const session = await getCurrentKitchenContext();
+
+    const allowedKitchenIds = session.kitchenIds && session.kitchenIds.length > 0
+      ? session.kitchenIds
+      : (session.kitchenId && session.kitchenId !== 'ALL' ? [session.kitchenId] : []);
+
+    let targetKitchenWhere: Prisma.StringFilter | string = {};
+    if (kitchenId && kitchenId !== 'ALL' && kitchenId !== 'default') {
+      // Strictly scope to the selected kitchen (if authorized)
+      if (allowedKitchenIds.length > 0 && !allowedKitchenIds.includes(kitchenId) && session.role !== 'owner') {
+        return { ok: false, error: 'Unauthorized: No permission for this kitchen outlet' };
+      }
+      targetKitchenWhere = kitchenId;
+    } else if (kitchenId === 'ALL' || session.kitchenId === 'ALL') {
+      // Scope to all kitchens the user has permission to access
+      targetKitchenWhere = { in: allowedKitchenIds };
+    } else {
+      // Fallback to active kitchen in session
+      targetKitchenWhere = session.kitchenId || (allowedKitchenIds[0] ?? '');
+    }
+
+    const [dbBrands, dbMenuItems] = await Promise.all([
+      prisma.brand.findMany({
+        where: { kitchenId: targetKitchenWhere },
+        orderBy: { name: 'asc' },
+      }),
+      prisma.menuItem.findMany({
+        where: { brand: { kitchenId: targetKitchenWhere } },
+        include: {
+          recipe: {
+            include: { ingredient: true }
+          }
+        },
+        orderBy: { name: 'asc' },
+      }),
+    ]);
+
+    if (dbBrands.length === 0) {
+      return { ok: true, data: { brands: INITIAL_BRANDS, menuItems: INITIAL_MENU_ITEMS } };
+    }
+
+    const formattedBrands: Brand[] = dbBrands.map((b) => ({
+      id: b.id,
+      name: b.name,
+      tagline: b.tagline || '',
+      color: b.color,
+      logoUrl: b.logoUrl || undefined,
+      address: b.address || undefined,
+      phone: b.phone || undefined,
+      email: b.email || undefined,
+      fssaiLic: b.fssaiLic || undefined,
+      invoiceTerms: b.invoiceTerms || undefined,
+      active: b.active,
+    }));
+
+    const formattedMenuItems: MenuItem[] = dbMenuItems.map((m) => ({
+      id: m.id,
+      brandId: m.brandId,
+      name: m.name,
+      description: m.description,
+      station: m.station as MenuItem['station'],
+      secondaryStations: m.secondaryStations as MenuItem['secondaryStations'],
+      sellingPrice: m.sellingPrice,
+      packagingCost: m.packagingCost,
+      isAvailable: m.isAvailable,
+      swiggyOnline: m.swiggyOnline,
+      zomatoOnline: m.zomatoOnline,
+      lastSyncedAt: m.lastSyncedAt?.toISOString(),
+      recipe: m.recipe.map((r) => ({
+        ingredientId: r.ingredientId,
+        ingredientName: r.ingredient?.name || '',
+        quantity: r.quantity,
+        unit: r.ingredient?.unit || 'g',
+      })),
+    }));
+
+    return { ok: true, data: { brands: formattedBrands, menuItems: formattedMenuItems } };
+  } catch (err) {
+    console.warn('Error fetching POS catalog from DB, falling back:', err);
+    return { ok: true, data: { brands: INITIAL_BRANDS, menuItems: INITIAL_MENU_ITEMS } };
   }
 }
 

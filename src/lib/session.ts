@@ -38,7 +38,67 @@ export async function getCurrentKitchenContext(explicitKitchenId?: string): Prom
   // connection() signals to Next.js Partial Prerendering to stream dynamically at request time
   await connection();
 
-  // 1. Verify POS Staff Terminal Session Token (HMAC signed)
+  // 1. First priority: Check if an authenticated Supabase user exists (Owner / Admin account)
+  try {
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (!authError && user?.id) {
+      const membership = await prisma.organizationMember.findFirst({
+        where: { userId: user.id },
+        include: {
+          organization: {
+            include: {
+              kitchens: {
+                where: { isActive: true },
+                orderBy: { createdAt: 'desc' },
+              },
+            },
+          },
+        },
+      });
+
+      if (membership && membership.organization?.kitchens?.length) {
+        let cookieKitchenId: string | undefined;
+        try {
+          const { cookies } = await import('next/headers');
+          const cookieStore = await cookies();
+          cookieKitchenId = cookieStore.get('kitchflow_active_kitchen_id')?.value;
+        } catch {}
+
+        const targetKitchenId = explicitKitchenId || cookieKitchenId;
+        const allKitchenIds = membership.organization.kitchens.map((k) => k.id);
+        const isAll = targetKitchenId === 'ALL';
+
+        const userKitchen = !isAll && targetKitchenId
+          ? membership.organization.kitchens.find((k: { id: string }) => k.id === targetKitchenId) || membership.organization.kitchens[0]
+          : membership.organization.kitchens[0];
+
+        const fullName =
+          (user.user_metadata?.full_name as string) ||
+          user.email?.split('@')[0] ||
+          'Store Owner';
+
+        const permissions = membership.role === 'owner'
+          ? ['orders', 'pos', 'kds', 'packing', 'inventory', 'procurement', 'margins', 'settings', 'history', 'customers', 'delivery']
+          : ((membership as any).permissions || ['orders', 'kds', 'packing']);
+
+        return {
+          userId: user.id,
+          userName: fullName,
+          kitchenId: isAll ? 'ALL' : userKitchen.id,
+          kitchenName: isAll ? 'All Outlets' : userKitchen.name,
+          kitchenIds: allKitchenIds,
+          role: membership.role,
+          permissions,
+        };
+      }
+    }
+  } catch (err) {
+    // If Supabase auth or member lookup fails, fall through to check station PIN session
+  }
+
+  // 2. Second priority: Verify POS Staff Terminal Session Token (HMAC signed)
   let staffSession: StaffSessionPayload | null = null;
   try {
     const { cookies } = await import('next/headers');
@@ -52,137 +112,106 @@ export async function getCurrentKitchenContext(explicitKitchenId?: string): Prom
   }
 
   if (staffSession?.organizationId) {
+    // Resilient fallback for demo stations or when DB is in sandbox/offline
+    if (staffSession.memberId === 'demo-staff') {
+      const kid = explicitKitchenId || staffSession.kitchenId || 'kitch-koramangala-01';
+      return {
+        userId: 'demo-staff',
+        userName: staffSession.name || 'Store Cashier',
+        kitchenId: kid,
+        kitchenName: staffSession.kitchenName || 'Koramangala Cloud Hub #1',
+        kitchenIds: [kid],
+        role: staffSession.role || 'kitchen_staff',
+        permissions: staffSession.permissions || ['orders', 'pos', 'kds', 'packing'],
+      };
+    }
+
     // Live re-verification against PostgreSQL database
     let liveRole = staffSession.role;
     let livePermissions = staffSession.permissions;
     let liveName = staffSession.name;
 
-    if (staffSession.memberId && staffSession.memberId !== 'demo-staff') {
-      const liveMember = await prisma.organizationMember.findUnique({
-        where: { id: staffSession.memberId },
-        select: {
-          id: true,
-          role: true,
-          permissions: true,
-          name: true,
-          organizationId: true,
-        },
-      });
+    try {
+      if (staffSession.memberId) {
+        const liveMember = await prisma.organizationMember.findUnique({
+          where: { id: staffSession.memberId },
+          select: {
+            id: true,
+            role: true,
+            permissions: true,
+            name: true,
+            organizationId: true,
+          },
+        });
 
-      // If staff member was deleted by owner, reject session immediately
-      if (!liveMember || liveMember.organizationId !== staffSession.organizationId) {
-        throw new AuthenticationRequiredError('Staff terminal session has been revoked or removed');
+        // If staff member was deleted by owner, reject session immediately
+        if (!liveMember || liveMember.organizationId !== staffSession.organizationId) {
+          throw new AuthenticationRequiredError('Staff terminal session has been revoked or removed');
+        }
+
+        liveRole = liveMember.role;
+        livePermissions = liveMember.permissions;
+        if (liveMember.name) liveName = liveMember.name;
       }
 
-      liveRole = liveMember.role;
-      livePermissions = liveMember.permissions;
-      if (liveMember.name) liveName = liveMember.name;
-    }
-
-    const org = await prisma.organization.findUnique({
-      where: { id: staffSession.organizationId },
-      include: {
-        kitchens: {
-          where: { isActive: true },
-          orderBy: { createdAt: 'desc' },
-        },
-      },
-    });
-
-    if (org && org.kitchens.length > 0) {
-      let cookieKitchenId: string | undefined;
-      try {
-        const { cookies } = await import('next/headers');
-        const cookieStore = await cookies();
-        cookieKitchenId = cookieStore.get('kitchflow_active_kitchen_id')?.value;
-      } catch {}
-
-      const targetKitchenId = explicitKitchenId || cookieKitchenId || staffSession.kitchenId;
-      const allKitchenIds = org.kitchens.map((k) => k.id);
-      const isAll = targetKitchenId === 'ALL';
-
-      const userKitchen = !isAll && targetKitchenId
-        ? org.kitchens.find((k: { id: string }) => k.id === targetKitchenId) || org.kitchens[0]
-        : org.kitchens[0];
-
-      const permissions = liveRole === 'owner'
-        ? ['orders', 'pos', 'kds', 'packing', 'inventory', 'procurement', 'margins', 'settings']
-        : (livePermissions || ['orders', 'kds', 'packing']);
-
-      return {
-        userId: staffSession.userId || 'pos-terminal-staff',
-        userName: liveName || 'Station Cashier',
-        kitchenId: isAll ? 'ALL' : userKitchen.id,
-        kitchenName: isAll ? 'All Outlets' : userKitchen.name,
-        kitchenIds: allKitchenIds,
-        role: liveRole || 'kitchen_staff',
-        permissions,
-      };
-    }
-  }
-
-  // 2. Otherwise verify Supabase Auth user
-  const supabase = await createClient();
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-  if (authError || !user?.id) {
-    throw new AuthenticationRequiredError('Active session not found or token expired');
-  }
-
-  // Resolve organization and kitchen bound to this authenticated user
-  const membership = await prisma.organizationMember.findFirst({
-    where: { userId: user.id },
-    include: {
-      organization: {
+      const org = await prisma.organization.findUnique({
+        where: { id: staffSession.organizationId },
         include: {
           kitchens: {
             where: { isActive: true },
             orderBy: { createdAt: 'desc' },
           },
         },
-      },
-    },
-  });
+      });
 
-  if (!membership || !membership.organization?.kitchens?.length) {
-    throw new KitchenNotFoundError('No active cloud kitchen associated with your account');
+      if (org && org.kitchens.length > 0) {
+        let cookieKitchenId: string | undefined;
+        try {
+          const { cookies } = await import('next/headers');
+          const cookieStore = await cookies();
+          cookieKitchenId = cookieStore.get('kitchflow_active_kitchen_id')?.value;
+        } catch {}
+
+        const targetKitchenId = explicitKitchenId || cookieKitchenId || staffSession.kitchenId;
+        const allKitchenIds = org.kitchens.map((k) => k.id);
+        const isAll = targetKitchenId === 'ALL';
+
+        const userKitchen = !isAll && targetKitchenId
+          ? org.kitchens.find((k: { id: string }) => k.id === targetKitchenId) || org.kitchens[0]
+          : org.kitchens[0];
+
+        const permissions = liveRole === 'owner'
+          ? ['orders', 'pos', 'kds', 'packing', 'inventory', 'procurement', 'margins', 'settings']
+          : (livePermissions || ['orders', 'kds', 'packing']);
+
+        return {
+          userId: staffSession.userId || 'pos-terminal-staff',
+          userName: liveName || 'Station Cashier',
+          kitchenId: isAll ? 'ALL' : userKitchen.id,
+          kitchenName: isAll ? 'All Outlets' : userKitchen.name,
+          kitchenIds: allKitchenIds,
+          role: liveRole || 'kitchen_staff',
+          permissions,
+        };
+      }
+    } catch (dbErr: any) {
+      if (dbErr instanceof AuthenticationRequiredError) throw dbErr;
+      // If DB read timed out or failed, fall back to claims in cryptographically signed token
+      if (staffSession.kitchenId) {
+        return {
+          userId: staffSession.userId || 'pos-terminal-staff',
+          userName: staffSession.name || 'Station Cashier',
+          kitchenId: explicitKitchenId || staffSession.kitchenId,
+          kitchenName: staffSession.kitchenName || 'Kitchen Station',
+          kitchenIds: [staffSession.kitchenId],
+          role: staffSession.role || 'kitchen_staff',
+          permissions: staffSession.permissions || ['orders', 'pos', 'kds', 'packing'],
+        };
+      }
+    }
   }
 
-  let cookieKitchenId: string | undefined;
-  try {
-    const { cookies } = await import('next/headers');
-    const cookieStore = await cookies();
-    cookieKitchenId = cookieStore.get('kitchflow_active_kitchen_id')?.value;
-  } catch {
-    // cookies() unavailable in non-request contexts
-  }
-
-  const targetKitchenId = explicitKitchenId || cookieKitchenId;
-  const allKitchenIds = membership.organization.kitchens.map((k) => k.id);
-  const isAll = targetKitchenId === 'ALL';
-
-  const userKitchen = !isAll && targetKitchenId
-    ? membership.organization.kitchens.find((k: { id: string }) => k.id === targetKitchenId) || membership.organization.kitchens[0]
-    : membership.organization.kitchens[0];
-
-  const fullName =
-    (user.user_metadata?.full_name as string) ||
-    user.email?.split('@')[0] ||
-    'Store Owner';
-
-  const permissions = membership.role === 'owner'
-    ? ['orders', 'pos', 'kds', 'packing', 'inventory', 'procurement', 'margins', 'settings', 'history', 'customers', 'delivery']
-    : ((membership as any).permissions || ['orders', 'kds', 'packing']);
-
-  return {
-    userId: user.id,
-    userName: fullName,
-    kitchenId: isAll ? 'ALL' : userKitchen.id,
-    kitchenName: isAll ? 'All Outlets' : userKitchen.name,
-    kitchenIds: allKitchenIds,
-    role: membership.role,
-    permissions,
-  };
+  throw new AuthenticationRequiredError('Active session not found or token expired');
 }
 
 /**

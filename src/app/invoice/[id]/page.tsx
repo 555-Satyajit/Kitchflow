@@ -2,6 +2,7 @@
 
 import React, { use, Suspense } from 'react'
 import { useKitchen } from '@/context/KitchenContext'
+import { useKitchenStore } from '@/stores/useKitchenStore'
 import { Order } from '@/types'
 import { Download, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -26,7 +27,8 @@ export default function InvoicePublicPage({ params }: { params: Promise<{ id: st
 function InvoiceContent({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params)
   const orderId = resolvedParams.id
-  const { orders, brands } = useKitchen()
+  const { brands } = useKitchen()
+  const storeOrders = useKitchenStore((s) => s.orders)
   const [mounted, setMounted] = React.useState(false)
   const [isDownloading, setIsDownloading] = React.useState(false)
 
@@ -44,9 +46,9 @@ function InvoiceContent({ params }: { params: Promise<{ id: string }> }) {
     retry: 2,
   });
 
-  // Client context / localStorage fallback only if offline / offline sync
+  // Client store / localStorage fallback only if offline / offline sync
   const clientOrder = React.useMemo(() => {
-    let found = orders.find((o) => o.id === orderId || o.orderNumber.replace(/[^a-zA-Z0-9]/g, '') === orderId);
+    let found = storeOrders[orderId] || Object.values(storeOrders).find((o) => o.orderNumber.replace(/[^a-zA-Z0-9]/g, '') === orderId);
     if (!found && typeof window !== 'undefined') {
       try {
         const stored = localStorage.getItem(`kitchflow_order_${orderId}`);
@@ -54,7 +56,7 @@ function InvoiceContent({ params }: { params: Promise<{ id: string }> }) {
       } catch (e) {}
     }
     return found || null;
-  }, [orderId, orders]);
+  }, [orderId, storeOrders]);
 
   const order = dbInvoiceData?.order || clientOrder;
   const [qrCodeDataUrl, setQrCodeDataUrl] = React.useState<string>('');

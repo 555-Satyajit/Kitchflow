@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { InventoryView } from '@/components/inventory/InventoryView';
 import { useKitchen } from '@/context/KitchenContext';
 import { Brand, Ingredient, MenuItem, StockLedgerEntry, PurchaseOrder, StockReasonCode } from '@/types';
@@ -54,23 +55,13 @@ export function InventorySectionClient({
     handleReceivePurchaseOrder,
   } = useKitchen();
 
-  // Sync server-rendered PostgreSQL inventory data into global kitchen context on mount
+  // Sync server-rendered PostgreSQL inventory data into global kitchen context on mount & when kitchen switches
   useEffect(() => {
-    if (initialIngredients !== undefined) {
-      setIngredients(initialIngredients);
-    }
-    if (initialMenuItems !== undefined) {
-      setMenuItems(initialMenuItems);
-    }
-    if (initialBrands !== undefined) {
-      setBrands(initialBrands);
-    }
-    if (initialStockLedger !== undefined) {
-      setStockLedger(initialStockLedger);
-    }
-    if (initialPurchaseOrders !== undefined) {
-      setPurchaseOrders(initialPurchaseOrders);
-    }
+    setIngredients(initialIngredients || []);
+    setMenuItems(initialMenuItems || []);
+    setBrands(initialBrands || []);
+    setStockLedger(initialStockLedger || []);
+    setPurchaseOrders(initialPurchaseOrders || []);
   }, [
     initialIngredients, 
     initialMenuItems, 
@@ -117,6 +108,8 @@ export function InventorySectionClient({
     }
   };
 
+  const router = useRouter();
+
   const onAddMenuItem = async (newDish: Omit<MenuItem, 'id'>) => {
     handleAddMenuItem(newDish);
     try {
@@ -132,6 +125,16 @@ export function InventorySectionClient({
       });
       if (!res.ok) {
         console.error('Server action failed adding menu item:', res.error);
+      } else if (res.data?.dish) {
+        const persistedDish = res.data.dish;
+        setMenuItems((prev) =>
+          prev.map((item) =>
+            item.name.toLowerCase() === persistedDish.name.toLowerCase() && item.id.startsWith('m-')
+              ? { ...item, id: persistedDish.id }
+              : item
+          )
+        );
+        router.refresh();
       }
     } catch (e) {
       console.error('Add dish server sync exception:', e);
@@ -243,11 +246,12 @@ export function InventorySectionClient({
 
   return (
     <InventoryView
-      ingredients={ingredients.length ? ingredients : initialIngredients}
-      menuItems={menuItems.length ? menuItems : initialMenuItems}
-      brands={brands.length ? brands : initialBrands}
-      stockLedger={stockLedger.length ? stockLedger : initialStockLedger}
-      purchaseOrders={purchaseOrders.length ? purchaseOrders : initialPurchaseOrders}
+      key={kitchenId || initialBrands.map((b) => b.id).join('-')}
+      ingredients={ingredients}
+      menuItems={menuItems}
+      brands={brands}
+      stockLedger={stockLedger}
+      purchaseOrders={purchaseOrders}
       userRole={userRole}
       onAdjustStockWithReason={onAdjustStock}
       onTogglePlatformStatus={onTogglePlatform}

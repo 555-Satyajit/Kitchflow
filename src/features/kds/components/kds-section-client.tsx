@@ -4,9 +4,10 @@ import React from 'react';
 import { KDSView } from '@/components/kds/KDSView';
 import { useKitchen } from '@/context/KitchenContext';
 import { Order } from '@/types';
-import { useKdsOrders } from '../hooks/useKdsOrders';
-import { getDeviceUuid } from '@/lib/utils';
-import { broadcastKitchenEvent } from '@/lib/supabase/realtime-bus';
+import { ThermalPrintModal } from '@/components/pos/ThermalPrintModal';
+import { useKitchenStore, selectKdsOrders } from '@/stores/useKitchenStore';
+import { useShallow } from 'zustand/react/shallow';
+import { updateOrderStatusAction } from '@/features/orders/order-actions';
 
 interface KdsSectionClientProps {
   initialOrders: Order[];
@@ -15,59 +16,43 @@ interface KdsSectionClientProps {
 }
 
 export function KdsSectionClient({ initialOrders, configuredStations = [], kitchenId }: KdsSectionClientProps) {
-  const { userRole } = useKitchen();
-  const { orders, toggleItem, markOrderReady } = useKdsOrders(kitchenId, initialOrders);
+  const { userRole, brands } = useKitchen();
+  
+  const v2KdsOrders = useKitchenStore(useShallow(selectKdsOrders));
+  const v2SetBulkOrders = useKitchenStore((s) => s.setBulkOrders);
 
-  // Ref map to prevent greasy-finger multi-tap duplicates and debounce broadcast payloads
+  React.useEffect(() => {
+    if (initialOrders && initialOrders.length > 0) {
+      v2SetBulkOrders(initialOrders);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const activeKdsOrders = React.useMemo(() => {
+    return v2KdsOrders.filter((o) => {
+      return !kitchenId || kitchenId === 'all' || !o.kitchenId || o.kitchenId === kitchenId;
+    });
+  }, [v2KdsOrders, kitchenId]);
+
+  const [printOrder, setPrintOrder] = React.useState<Order | null>(null);
+  const [isPrintModalOpen, setIsPrintModalOpen] = React.useState<boolean>(false);
+
+  // Ref map to prevent greasy-finger multi-tap duplicates
   const inFlightTogglesRef = React.useRef<{ [itemId: string]: boolean }>({});
-  const debounceTimersRef = React.useRef<{ [itemId: string]: NodeJS.Timeout }>({});
 
   const handleToggleStationItem = (orderId: string, itemId: string) => {
-    // 1. "Greasy Finger" Lock: If user is actively tapping or a mutation is in flight, drop duplicate tap
+    // 1. "Greasy Finger" Lock: If user is actively tapping, drop duplicate tap
     if (inFlightTogglesRef.current[itemId]) {
       return;
     }
     inFlightTogglesRef.current[itemId] = true;
 
-    // Find current item in cache to determine targetDone and clientVersion
-    const targetOrder = orders.find((o) => o.id === orderId);
+    // Find current item in cache to determine targetDone
+    const targetOrder = useKitchenStore.getState().orders[orderId];
     const targetItem = targetOrder?.items.find((it) => it.id === itemId);
     const nextDone = targetItem ? !targetItem.stationDone : true;
-    const currentVersion = targetItem?.version ?? 0;
 
-    // Fire TanStack Query optimistic mutation
-    toggleItem({
-      orderId,
-      itemId,
-      nextDone,
-      clientVersion: currentVersion,
-    });
-
-    // Debounce Broadcast payload for other kitchen displays (<250ms)
-    if (debounceTimersRef.current[itemId]) {
-      clearTimeout(debounceTimersRef.current[itemId]);
-    }
-
-    debounceTimersRef.current[itemId] = setTimeout(() => {
-      try {
-        const channelName = kitchenId ? `kitchen-${kitchenId}-kds` : 'kitchen-global-kds';
-        const payload = { 
-          orderId, 
-          itemId, 
-          isDone: nextDone,
-          stationDone: nextDone, 
-          version: currentVersion + 1,
-          senderId: getDeviceUuid(),
-          updatedAt: new Date().toISOString() 
-        };
-        broadcastKitchenEvent(channelName, 'kds_item_toggled', payload);
-        if (kitchenId) {
-          broadcastKitchenEvent('kitchen-global-kds', 'kds_item_toggled', payload);
-        }
-      } catch {
-        // ignore
-      }
-    }, 250);
+    useKitchenStore.getState().toggleStationItem(orderId, itemId, nextDone);
 
     setTimeout(() => {
       delete inFlightTogglesRef.current[itemId];
@@ -79,37 +64,44 @@ export function KdsSectionClient({ initialOrders, configuredStations = [], kitch
     if (inFlightTogglesRef.current[orderId]) return;
     inFlightTogglesRef.current[orderId] = true;
 
-    // Broadcast instant READY notice to dispatch screens
-    try {
-      const kdsChannel = kitchenId ? `kitchen-${kitchenId}-kds` : 'kitchen-global-kds';
-      const packingChannel = kitchenId ? `kitchen-${kitchenId}-packing` : 'kitchen-global-packing';
-      const payload = { orderId, status: 'READY', timestamp: new Date().toISOString(), senderId: getDeviceUuid() };
-
-      broadcastKitchenEvent(kdsChannel, 'order_status_changed', payload);
-      broadcastKitchenEvent(packingChannel, 'order_status_changed', payload);
-      if (kitchenId) {
-        broadcastKitchenEvent('kitchen-global-kds', 'order_status_changed', payload);
-        broadcastKitchenEvent('kitchen-global-packing', 'order_status_changed', payload);
-      }
-    } catch {
-      // ignore
-    }
-
-    // Fire TanStack Query optimistic mutation (instantly drops order from KDS and bumps packing count)
-    markOrderReady({ orderId });
+    useKitchenStore.getState().bumpOrderStatus(orderId, 'READY');
 
     setTimeout(() => {
       delete inFlightTogglesRef.current[orderId];
     }, 500);
   };
 
+  const handlePrintKot = (order: Order) => {
+    setPrintOrder(order);
+    setIsPrintModalOpen(true);
+  };
+
+  const handleRecallLastBump = async () => {
+    // Recall handled gracefully if supported
+  };
+
   return (
-    <KDSView
-      orders={orders}
-      configuredStations={configuredStations as any}
-      onToggleStationItem={handleToggleStationItem}
-      onMarkOrderReady={handleMarkOrderReady}
-      userRole={userRole}
-    />
+    <>
+      <KDSView
+        orders={activeKdsOrders}
+        configuredStations={configuredStations as any}
+        onToggleStationItem={handleToggleStationItem}
+        onMarkOrderReady={handleMarkOrderReady}
+        onPrintKot={handlePrintKot}
+        onRecallLastBump={handleRecallLastBump}
+        canRecall={false}
+        userRole={userRole}
+      />
+
+      <ThermalPrintModal
+        order={printOrder}
+        open={isPrintModalOpen}
+        onOpenChange={setIsPrintModalOpen}
+        defaultMode="kot"
+        outletConfig={{
+          name: printOrder ? brands.find((b) => b.id === printOrder.brandId)?.name || printOrder.brandName : 'KITCHEN',
+        }}
+      />
+    </>
   );
 }

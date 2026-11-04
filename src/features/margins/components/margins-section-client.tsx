@@ -3,6 +3,8 @@
 import React from 'react';
 import { MarginsView } from '@/components/margins/MarginsView';
 import { useKitchen } from '@/context/KitchenContext';
+import { useKitchenStore, selectLiveQueueOrders } from '@/stores/useKitchenStore';
+import { useShallow } from 'zustand/react/shallow';
 import { Lock, ArrowRight, ChefHat, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
@@ -13,14 +15,8 @@ interface MarginsSectionClientProps {
 }
 
 export function MarginsSectionClient({ initialOrders }: MarginsSectionClientProps) {
-  const { orders, setOrders, userRole, setUserRole } = useKitchen();
-
-  // Hydrate global kitchen context with initial orders from Postgres if context orders are empty
-  React.useEffect(() => {
-    if (initialOrders && initialOrders.length > 0) {
-      setOrders((prev) => (prev.length === 0 ? initialOrders : prev));
-    }
-  }, [initialOrders, setOrders]);
+  const { userRole, setUserRole } = useKitchen();
+  const storeOrders = useKitchenStore(useShallow(selectLiveQueueOrders));
 
   // Guard: Cook role cannot view store P&L, commissions, and margin engine
   if (userRole === 'LINE_COOK') {
@@ -67,7 +63,7 @@ export function MarginsSectionClient({ initialOrders }: MarginsSectionClientProp
     );
   }
 
-  const effectiveOrders = orders.length > 0 ? orders : initialOrders;
+  const effectiveOrders = storeOrders.length > 0 ? storeOrders : initialOrders;
 
   return <MarginsView orders={effectiveOrders} />;
 }

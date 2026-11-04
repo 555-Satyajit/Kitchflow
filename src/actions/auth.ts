@@ -14,6 +14,19 @@ export async function loginWithSupabase(formData: FormData) {
     return { error: 'Please enter both email and password' }
   }
 
+  // Clear any existing terminal staff PIN session so the Owner session takes full precedence
+  try {
+    const { cookies } = await import('next/headers')
+    const cookieStore = await cookies()
+    cookieStore.set('kitchflow_staff_session', '', {
+      path: '/',
+      httpOnly: true,
+      maxAge: 0,
+      expires: new Date(0),
+    })
+    cookieStore.delete('kitchflow_staff_session')
+  } catch (e) {}
+
   const supabase = await createClient()
   const { data, error } = await supabase.auth.signInWithPassword({
     email,
@@ -27,17 +40,31 @@ export async function loginWithSupabase(formData: FormData) {
   return { success: true, redirectTo }
 }
 
-export async function signOutFromSupabase() {
+export async function signOutFromSupabase(): Promise<{ success: boolean }> {
   try {
     const { cookies } = await import('next/headers')
     const cookieStore = await cookies()
+    cookieStore.set('kitchflow_staff_session', '', {
+      path: '/',
+      httpOnly: true,
+      maxAge: 0,
+      expires: new Date(0),
+    })
+    cookieStore.set('kitchflow_active_kitchen_id', '', {
+      path: '/',
+      maxAge: 0,
+      expires: new Date(0),
+    })
     cookieStore.delete('kitchflow_staff_session')
     cookieStore.delete('kitchflow_active_kitchen_id')
   } catch (e) {}
 
-  const supabase = await createClient()
-  await supabase.auth.signOut()
-  redirect('/login')
+  try {
+    const supabase = await createClient()
+    await supabase.auth.signOut()
+  } catch (e) {}
+
+  return { success: true }
 }
 
 export async function loginWithPinAction(pin: string): Promise<{
@@ -187,6 +214,10 @@ export async function loginWithPinAction(pin: string): Promise<{
     const allowDemoPins = process.env.NODE_ENV !== 'production' || process.env.ALLOW_DEMO_PINS === 'true';
     if (allowDemoPins && (cleanPin === '1234' || cleanPin === '5123')) {
       resetPinRateLimit(clientIdentifier);
+      try {
+        const supabase = await createClient();
+        await supabase.auth.signOut();
+      } catch {}
       try {
         const { cookies } = await import('next/headers');
         const cookieStore = await cookies();

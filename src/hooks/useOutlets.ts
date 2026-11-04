@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getOrganizationKitchensAction, switchActiveKitchenAction } from '@/actions/settings';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { NAV_COUNTS_QUERY_KEY } from '@/hooks/useNavCounts';
+import { useKitchenStore } from '@/stores/useKitchenStore';
 
 export const OUTLETS_QUERY_KEY = ['organization-outlets'] as const;
 export const ACTIVE_OUTLET_QUERY_KEY = ['active-outlet-id'] as const;
@@ -51,25 +51,24 @@ export function useOutlets() {
       }
       return outletsQuery.data?.activeKitchenId || (kitchens[0]?.id ?? 'ALL');
     },
-    initialData: () => {
-      if (typeof window !== 'undefined') {
-        return localStorage.getItem('kitchflow_active_kitchen_id') || 'ALL';
-      }
-      return 'ALL';
-    },
-    staleTime: Infinity,
+    staleTime: 1000 * 30,
   });
 
-  const activeOutletId = activeKitchenQuery.data || 'ALL';
+  const activeOutletId = activeKitchenQuery.data || (typeof window !== 'undefined' ? localStorage.getItem('kitchflow_active_kitchen_id') : undefined) || 'ALL';
   const activeOutletName =
     activeOutletId === 'ALL'
       ? 'All Outlets'
-      : kitchens.find((k) => k.id === activeOutletId)?.name || 'Select Outlet';
+      : kitchens.find((k) => k.id === activeOutletId)?.name || (typeof window !== 'undefined' ? localStorage.getItem('kitchflow_active_kitchen_name') : undefined) || 'Select Outlet';
 
   // 3. TanStack Mutation for Instant Switching (Zero Blank-Screen Reload)
   const switchOutletMutation = useMutation({
     mutationFn: async ({ outletId, outletName }: { outletId: string; outletName: string }) => {
-      // Clean up supabase realtime channels to avoid cross-tenant leaks
+      // 1. Immediately set cookie on client for instantaneous synchronization
+      if (typeof document !== 'undefined') {
+        document.cookie = `kitchflow_active_kitchen_id=${outletId}; path=/; max-age=2592000; SameSite=Lax`;
+      }
+
+      // 2. Clean up supabase realtime channels to avoid cross-tenant leaks
       try {
         const supabase = createClient();
         await supabase.removeAllChannels();
@@ -77,7 +76,7 @@ export function useOutlets() {
         console.warn('Realtime channel cleanup error:', wsErr);
       }
 
-      // Persist in server cookie
+      // 3. Persist in server cookie & trigger server revalidations
       const res = await switchActiveKitchenAction(outletId);
       if (!res.ok) {
         throw new Error(res.error || 'Failed to switch outlet');
@@ -91,12 +90,12 @@ export function useOutlets() {
 
       // Optimistically update active outlet
       queryClient.setQueryData<string>(ACTIVE_OUTLET_QUERY_KEY, outletId);
+      useKitchenStore.getState().setActiveKitchenId(outletId);
 
       if (typeof window !== 'undefined') {
         try {
           localStorage.setItem('kitchflow_active_kitchen_id', outletId);
           localStorage.setItem('kitchflow_active_kitchen_name', outletName);
-          localStorage.removeItem('kitchflow_nav_counts_cache');
         } catch {}
       }
 
@@ -107,15 +106,15 @@ export function useOutlets() {
         queryClient.setQueryData<string>(ACTIVE_OUTLET_QUERY_KEY, context.previousOutletId);
       }
     },
-    onSettled: () => {
+    onSettled: async (data) => {
+      if (data?.outletId) {
+        queryClient.setQueryData<string>(ACTIVE_OUTLET_QUERY_KEY, data.outletId);
+      }
       // Invalidate relevant TanStack queries so components smoothly re-fetch with new kitchenId
-      queryClient.invalidateQueries({ queryKey: NAV_COUNTS_QUERY_KEY });
-      queryClient.invalidateQueries({ queryKey: ['live-orders'] });
-      queryClient.invalidateQueries({ queryKey: ['kds-orders'] });
-      queryClient.invalidateQueries({ queryKey: ['packing-orders'] });
       queryClient.invalidateQueries({ queryKey: OUTLETS_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: ACTIVE_OUTLET_QUERY_KEY });
       
-      // Tell Next.js App Router to refresh server components in the background without browser reload
+      // Tell Next.js App Router to refresh server components with new active kitchen
       router.refresh();
     },
   });

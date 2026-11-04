@@ -22,7 +22,8 @@ import {
   CheckCircle2, 
   HelpCircle,
   Smartphone,
-  ChefHat
+  ChefHat,
+  Loader2
 } from "lucide-react"
 
 export function LoginForm({
@@ -81,11 +82,13 @@ export function LoginForm({
     e.preventDefault()
     setErrorMsg(null)
     setIsLoading(true)
+    let willRedirect = false
 
     try {
       if (authMode === "pin") {
         const pinRes = await loginWithPinAction(pin);
         if (pinRes.success) {
+          willRedirect = true
           // If credentials exist in config and user is verified owner, authenticate Supabase session
           if (pinRes.role === 'owner' && provisionedConfig?.ownerCredentials?.email && provisionedConfig?.ownerCredentials?.password) {
             const formData = new FormData()
@@ -109,8 +112,8 @@ export function LoginForm({
             }
           } catch (e) {}
 
-          // Perform hard navigation to ensure session cookies are sent cleanly to middleware
-          window.location.href = pinRes.redirectTo || "/pos"
+          // Immediate replacement to station view without retaining stale backstack
+          window.location.replace(pinRes.redirectTo || "/pos")
           return
         } else {
           setErrorMsg(pinRes.error || "Invalid POS Terminal PIN. Please enter the master PIN provisioned for this store.")
@@ -131,14 +134,27 @@ export function LoginForm({
         return
       }
 
-      router.push(res?.redirectTo || redirectTo)
-      router.refresh()
+      willRedirect = true
+
+      // Purge any lingering staff terminal keys from localStorage so the Owner profile loads cleanly
+      try {
+        localStorage.removeItem('kitchflow_active_staff_name')
+        localStorage.removeItem('kitchflow_active_staff_role')
+        localStorage.removeItem('kitchflow_active_staff_permissions')
+      } catch (e) {}
+
+      // Immediate window replacement to target view
+      window.location.replace(res?.redirectTo || redirectTo)
+      return
     } catch (err: any) {
       if (err?.message !== "NEXT_REDIRECT") {
         setErrorMsg(err?.message || "Authentication failed")
       }
     } finally {
-      setIsLoading(false)
+      // Keep loading spinner locked if we are successfully redirecting
+      if (!willRedirect) {
+        setIsLoading(false)
+      }
     }
   }
 
@@ -314,7 +330,10 @@ export function LoginForm({
                 className="w-full h-11 rounded-xl text-xs font-bold cursor-pointer shadow-sm active:scale-[0.98] transition-all gap-2"
               >
                 {isLoading ? (
-                  <span>Authenticating Station...</span>
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                    <span>Opening Station...</span>
+                  </>
                 ) : (
                   <>
                     <span>{authMode === "pin" ? "Unlock POS Station" : "Sign In to Dashboard"}</span>

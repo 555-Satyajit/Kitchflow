@@ -173,6 +173,7 @@ export interface OrderFinancials {
 export interface Order {
   id: string;
   orderNumber: string;
+  kitchenId?: string;
   channel: Channel;
   brandId: string;
   brandName: string;
@@ -190,8 +191,14 @@ export interface Order {
   createdAt: string; // ISO
   updatedAt?: string;
   version?: number;
+  syncError?: boolean;
+  isSyncing?: boolean;
   acknowledgedAt?: string;
   readyAt?: string;
+  dispatchedAt?: string;
+  deliveredAt?: string;
+  undeliveredAt?: string;
+  undeliveredReason?: string;
   financials: OrderFinancials;
 }
 
@@ -203,6 +210,7 @@ export type StaffPermission =
   | 'pos'         // Punch manual counter walk-in tickets
   | 'kds'         // Cook stations & bump bars
   | 'packing'     // Packing QA & rider dispatch
+  | 'delivery'    // Delivery boy runs & rider fleet
   | 'inventory'   // Inventory stock tracking
   | 'procurement' // PO generation & wastage logging
   | 'margins'     // Profit & loss analytics

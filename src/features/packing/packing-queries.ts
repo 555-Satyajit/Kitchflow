@@ -1,6 +1,5 @@
 import 'server-only';
 import { prisma } from '@/lib/prisma';
-import { INITIAL_ORDERS } from '@/lib/mockData';
 import { Order } from '@/types';
 
 import { getCurrentKitchenContext } from '@/lib/session';

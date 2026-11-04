@@ -14,7 +14,6 @@ interface OrdersQueueViewProps {
   orders: Order[]
   onUpdateStatus: (orderId: string, newStatus: OrderStatus) => void
   onInspectFinancials: (order: Order) => void
-  onSimulateNewOrder: () => void
   onOpenManualOrder?: () => void
 }
 
@@ -22,7 +21,6 @@ export function OrdersQueueView({
   orders,
   onUpdateStatus,
   onInspectFinancials,
-  onSimulateNewOrder,
   onOpenManualOrder,
 }: OrdersQueueViewProps) {
   const [filter, setFilter] = useState<'ALL' | 'ACTIVE' | 'READY'>('ALL')
@@ -139,7 +137,7 @@ export function OrdersQueueView({
           </p>
         </div>
 
-        <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 w-full sm:w-auto">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           <Link href="/pos" className="w-full sm:w-auto">
             <Button
               variant="default"
@@ -150,16 +148,6 @@ export function OrdersQueueView({
               <span>New Order</span>
             </Button>
           </Link>
-
-          <Button
-            onClick={onSimulateNewOrder}
-            variant="outline"
-            size="sm"
-            className="w-full sm:w-auto h-10 px-4 gap-2 font-semibold shadow-2xs border-border/80 hover:bg-muted bg-background/50 rounded-xl transition-all active:scale-95 cursor-pointer text-foreground"
-          >
-            <Plus className="w-4 h-4 text-muted-foreground" />
-            <span>Simulate</span>
-          </Button>
         </div>
       </div>
 
@@ -260,16 +248,18 @@ export function OrdersQueueView({
             <ShoppingBag className="w-10 h-10 mx-auto mb-2 text-muted-foreground/50 stroke-[1.5]" />
             <p className="text-sm font-semibold text-foreground">No orders in this queue</p>
             <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
-              Simulate incoming customer orders from Swiggy, Zomato or Direct Brand storefront to view live queue cards.
+              Incoming orders from POS counter walk-ins or online channels will appear here automatically in real time.
             </p>
-            <Button
-              onClick={onSimulateNewOrder}
-              variant="outline"
-              size="sm"
-              className="mt-4 text-xs h-8"
-            >
-              Simulate First Order
-            </Button>
+            <Link href="/pos" className="inline-block mt-4">
+              <Button
+                variant="default"
+                size="sm"
+                className="text-xs h-8 gap-1.5"
+              >
+                <ShoppingBag className="w-3.5 h-3.5" />
+                <span>Punch Order</span>
+              </Button>
+            </Link>
           </div>
         ) : (
           filteredOrders.map((order) => {

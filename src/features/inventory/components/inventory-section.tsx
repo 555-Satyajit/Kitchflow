@@ -2,7 +2,7 @@ import React from 'react';
 import { getInventoryData } from '../inventory-queries';
 import { InventorySectionClient } from './inventory-section-client';
 import { Skeleton } from '@/components/ui/skeleton';
-import { requirePermission } from '@/lib/session';
+import { requirePermission, getCurrentKitchenContext } from '@/lib/session';
 
 interface InventorySectionProps {
   kitchenId?: string;
@@ -10,16 +10,19 @@ interface InventorySectionProps {
 
 export async function InventorySection({ kitchenId }: InventorySectionProps) {
   await requirePermission('inventory');
-  const data = await getInventoryData(kitchenId);
+  const sessionCtx = await getCurrentKitchenContext(kitchenId);
+  const effectiveKitchenId = kitchenId || sessionCtx.kitchenId;
+  const data = await getInventoryData(effectiveKitchenId);
 
   return (
     <InventorySectionClient
+      key={effectiveKitchenId}
       initialIngredients={data.ingredients}
       initialMenuItems={data.menuItems}
       initialBrands={data.brands}
       initialStockLedger={data.stockLedger}
       initialPurchaseOrders={data.purchaseOrders}
-      kitchenId={kitchenId}
+      kitchenId={effectiveKitchenId}
     />
   );
 }

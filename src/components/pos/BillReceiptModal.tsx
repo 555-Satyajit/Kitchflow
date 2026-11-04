@@ -27,6 +27,7 @@ import {
 import { RealBillPdfDocument } from '@/components/pos/RealBillPdfDocument'
 import { pdf } from '@react-pdf/renderer'
 import { useKitchen } from '@/context/KitchenContext'
+import { ThermalPrintModal } from './ThermalPrintModal'
 
 interface BillReceiptModalProps {
   order: Order | null
@@ -43,6 +44,8 @@ export function BillReceiptModal({
 }: BillReceiptModalProps) {
   const { brands } = useKitchen()
   const [isGeneratingPdf, setIsGeneratingPdf] = React.useState(false)
+  const [thermalModalOpen, setThermalModalOpen] = React.useState(false)
+  const [thermalMode, setThermalMode] = React.useState<'kot' | 'bill'>('bill')
 
   if (!order) return null
 
@@ -410,16 +413,44 @@ export function BillReceiptModal({
               </span>
             </Button>
 
-            {/* Action Grid */}
+            {/* Thermal Print Grid (Petpooja style: Instant Thermal Bill + Kitchen KOT) */}
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                onClick={() => {
+                  setThermalMode('bill')
+                  setThermalModalOpen(true)
+                }}
+                className="h-10 text-xs font-bold gap-1.5 bg-orange-600 hover:bg-orange-700 text-white cursor-pointer shadow-sm"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Thermal Bill (ESC/POS)</span>
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setThermalMode('kot')
+                  setThermalModalOpen(true)
+                }}
+                className="h-10 text-xs font-bold gap-1.5 border-orange-500/40 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/20 cursor-pointer"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Print KOT Ticket</span>
+              </Button>
+            </div>
+
+            {/* Secondary Actions: PDF & Web Bill */}
             <div className="grid grid-cols-2 gap-2">
               <Button
                 type="button"
                 variant="outline"
                 disabled={isGeneratingPdf}
                 onClick={handleDownloadPdf}
-                className="h-10 text-xs font-bold gap-1.5 border-border hover:bg-muted cursor-pointer"
+                className="h-9 text-xs font-semibold gap-1.5 border-border hover:bg-muted cursor-pointer"
               >
-                <Download className="w-4 h-4 text-emerald-600" />
+                <Download className="w-3.5 h-3.5 text-emerald-600" />
                 <span>{isGeneratingPdf ? 'Creating PDF...' : 'Download PDF'}</span>
               </Button>
 
@@ -427,10 +458,10 @@ export function BillReceiptModal({
                 type="button"
                 variant="outline"
                 onClick={handlePrint}
-                className="h-10 text-xs font-bold gap-1.5 border-border hover:bg-muted cursor-pointer"
+                className="h-9 text-xs font-semibold gap-1.5 border-border hover:bg-muted cursor-pointer"
               >
-                <Printer className="w-4 h-4" />
-                <span>Print (80mm)</span>
+                <Printer className="w-3.5 h-3.5" />
+                <span>Browser Print</span>
               </Button>
             </div>
 
@@ -461,6 +492,22 @@ export function BillReceiptModal({
           </div>
         </div>
       </DialogContent>
+
+      <ThermalPrintModal
+        order={order}
+        open={thermalModalOpen}
+        onOpenChange={setThermalModalOpen}
+        defaultMode={thermalMode}
+        outletConfig={{
+          name: (order as any).brand?.name || brands.find((b) => b.id === order.brandId)?.name || order.brandName || 'BEHEROZ BIRIYANI',
+          address: (order as any).brand?.address || brands.find((b) => b.id === order.brandId)?.address || 'Link Road, Near Badambedi Bus Stand, Cuttack, Odisha - 753012',
+          phone: (order as any).brand?.phone || brands.find((b) => b.id === order.brandId)?.phone || '+91 97780 99881',
+          email: (order as any).brand?.email || brands.find((b) => b.id === order.brandId)?.email || 'cuttack.orders@beheroz.in',
+          gstin: '21AABCU9603R3ZP',
+          fssaiLic: (order as any).brand?.fssaiLic || brands.find((b) => b.id === order.brandId)?.fssaiLic || '12024020000771',
+          invoiceTerms: (order as any).brand?.invoiceTerms || "Food once sold can't be returned.",
+        }}
+      />
     </Dialog>
   )
 }

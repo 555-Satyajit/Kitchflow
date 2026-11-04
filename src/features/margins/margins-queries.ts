@@ -1,6 +1,5 @@
 import 'server-only';
 import { prisma } from '@/lib/prisma';
-import { INITIAL_ORDERS } from '@/lib/mockData';
 import { Order } from '@/types';
 import { getCurrentKitchenContext } from '@/lib/session';
 
@@ -84,12 +83,12 @@ export async function getMarginsOrders(kitchenId?: string): Promise<Order[]> {
       }));
     }
 
-    return INITIAL_ORDERS;
+    return [];
   } catch (error: any) {
     if (error?.digest === 'HANGING_PROMISE_REJECTION' || error?.digest === 'NEXT_PRERENDER_SIGNAL') {
       throw error;
     }
     console.error('Error in getMarginsOrders, returning fallback:', error);
-    return INITIAL_ORDERS;
+    return [];
   }
 }

@@ -1,15 +1,12 @@
 'use client'
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { getDeviceUuid } from '@/lib/utils'
 import { 
   INITIAL_BRANDS, 
   INITIAL_INGREDIENTS, 
-  INITIAL_MENU_ITEMS, 
-  INITIAL_ORDERS,
-  INITIAL_STOCK_LEDGER,
-  INITIAL_PURCHASE_ORDERS
+  INITIAL_MENU_ITEMS
 } from '@/lib/mockData'
 import { 
   Brand, 
@@ -72,15 +69,9 @@ interface KitchenContextType {
   setUserRole: (role: UserRole) => void
   setLanguage: (lang: KitchenLanguage) => void
   updateCommissionSettings: (newSettings: Partial<CommissionSettings>) => void
-  handleUpdateStatus: (orderId: string, newStatus: OrderStatus) => void
-  handleToggleStationItem: (orderId: string, itemId: string) => void
-  handleMarkOrderReady: (orderId: string) => void
-  handleToggleChecklistItem: (orderId: string, key: keyof PackingChecklist) => void
-  handleCompletePacking: (orderId: string) => void
   handleAdjustStockWithReason: (ingredientId: string, delta: number, reason: StockReasonCode, note?: string) => void
   handleTogglePlatformStatus: (itemId: string, platform: 'SWIGGY' | 'ZOMATO') => void
   handleToggleEmergencyPause: (target: 'ALL' | 'SWIGGY' | 'ZOMATO') => void
-  handleSimulateNewOrder: () => void
   handleCreateManualOrder: (params: {
     brandId: string
     channel: Channel
@@ -123,9 +114,9 @@ export function KitchenProvider({
 }) {
   const [orders, setOrders] = useState<Order[]>([])
   const [isOrdersLoaded, setIsOrdersLoaded] = useState(Boolean(initialNavCounts))
-  const [ingredients, setIngredients] = useState<Ingredient[]>([])
-  const [menuItems, setMenuItems] = useState<MenuItem[]>([])
-  const [brands, setBrands] = useState<Brand[]>([])
+  const [ingredients, setIngredients] = useState<Ingredient[]>(INITIAL_INGREDIENTS)
+  const [menuItems, setMenuItems] = useState<MenuItem[]>(INITIAL_MENU_ITEMS)
+  const [brands, setBrands] = useState<Brand[]>(INITIAL_BRANDS)
   const [stockLedger, setStockLedger] = useState<StockLedgerEntry[]>([])
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([])
   const [isPausedAll, setIsPausedAll] = useState(false)
@@ -408,94 +399,6 @@ export function KitchenProvider({
     setStockLedger((prev) => [...newLedgerEntries, ...prev])
   }
 
-  const handleUpdateStatus = (orderId: string, newStatus: OrderStatus) => {
-    // 1. Optimistic UI update
-    setOrders((prev) =>
-      prev.map((o) => {
-        if (o.id !== orderId) return o
-        
-        // If transitioning to PREPARING, trigger end-to-end BOM inventory auto-deduction
-        if (newStatus === 'PREPARING' && o.status !== 'PREPARING') {
-          setTimeout(() => deductIngredientsForOrder(o), 0)
-        }
-
-        return { 
-          ...o, 
-          status: newStatus,
-          acknowledgedAt: o.acknowledgedAt || (newStatus === 'ACCEPTED' ? new Date().toISOString() : undefined)
-        }
-      })
-    )
-
-    // Trigger in-memory optimistic delta & broadcast
-    let deltaAction: NavCountDeltaAction | null = null
-    if (newStatus === 'PREPARING') {
-      deltaAction = { type: 'KDS_START_COOKING' }
-    } else if (newStatus === 'READY') {
-      deltaAction = { type: 'KDS_COMPLETE' }
-    } else if (newStatus === 'DISPATCHED') {
-      deltaAction = { type: 'DISPATCH_COMPLETE' }
-    }
-
-    if (deltaAction) {
-      dispatchOptimisticDelta(deltaAction)
-      try {
-        const supabase = createClient()
-        const kid = getActiveKitchenId()
-        supabase.channel(`kitchen-${kid}-counters`).send({
-          type: 'broadcast',
-          event: 'nav_counter_delta',
-          payload: { action: deltaAction, senderId: getDeviceUuid() }
-        })
-      } catch (e) {}
-    }
-
-    // 2. Persist to live Supabase PostgreSQL database
-    const activeKid = getActiveKitchenId()
-    import('@/features/orders/order-actions')
-      .then(({ updateOrderStatusAction }) => {
-        updateOrderStatusAction({ orderId, status: newStatus, kitchenId: activeKid !== 'default' ? activeKid : undefined }).catch((err) => {
-          console.warn('Background Supabase status update note:', err?.message || err)
-        })
-      })
-      .catch((err) => console.warn('Could not load order-actions:', err))
-  }
-
-  const handleToggleStationItem = (orderId: string, itemId: string) => {
-    setOrders((prev) =>
-      prev.map((o) => {
-        if (o.id !== orderId) return o
-        const updatedItems = o.items.map((it) =>
-          it.id === itemId ? { ...it, stationDone: !it.stationDone } : it
-        )
-        return { ...o, items: updatedItems }
-      })
-    )
-  }
-
-  const handleMarkOrderReady = (orderId: string) => {
-    handleUpdateStatus(orderId, 'READY')
-  }
-
-  const handleToggleChecklistItem = (orderId: string, key: keyof PackingChecklist) => {
-    setOrders((prev) =>
-      prev.map((o) => {
-        if (o.id !== orderId) return o
-        return {
-          ...o,
-          checklist: {
-            ...o.checklist,
-            [key]: !o.checklist[key],
-          },
-        }
-      })
-    )
-  }
-
-  const handleCompletePacking = (orderId: string) => {
-    handleUpdateStatus(orderId, 'DISPATCHED')
-  }
-
   const handleAdjustStockWithReason = (
     ingredientId: string, 
     delta: number, 
@@ -584,83 +487,6 @@ export function KitchenProvider({
         return { ...prev, zomato: nextZomato }
       })
     }
-  }
-
-  const handleSimulateNewOrder = () => {
-    const randomChannel = Math.random() > 0.5 ? 'SWIGGY' : 'ZOMATO'
-    
-    // Choose between wrap or burger or biryani
-    const randomItem = menuItems[Math.floor(Math.random() * menuItems.length)] || menuItems[0]
-    const qty = 2
-    const itemSubtotal = randomItem.sellingPrice * qty
-    const pkgFee = randomItem.packagingCost * qty
-    const discount = 50
-    const commRate = randomChannel === 'SWIGGY' ? 0.22 : 0.24
-    
-    // Calculate BOM cost from recipe
-    let bomCost = 0
-    randomItem.recipe.forEach((r) => {
-      const ing = ingredients.find((i) => i.id === r.ingredientId)
-      if (ing) {
-        bomCost += r.quantity * qty * ing.costPerUnit
-      }
-    })
-    if (bomCost === 0) bomCost = 85.0
-
-    const fin = calculateOrderFinancials({
-      itemSubtotal,
-      packagingFeeCollected: pkgFee,
-      customerDiscount: discount,
-      commissionRate: commRate,
-      ingredientCost: bomCost,
-      packagingMaterialCost: pkgFee,
-      settings: commissionSettings,
-    }).financials
-
-    const newOrd: Order = {
-      id: `ord-${Date.now()}`,
-      orderNumber: `#${randomChannel === 'SWIGGY' ? 'SW' : 'ZM'}-${Math.floor(1000 + Math.random() * 9000)}`,
-      channel: randomChannel,
-      brandId: randomItem.brandId,
-      brandName: brands.find((b) => b.id === randomItem.brandId)?.name || 'Kitchen Brand',
-      customerName: ['Kabir Mehta', 'Tanvi Deshmukh', 'Vikram Seth', 'Ananya Roy'][Math.floor(Math.random() * 4)],
-      status: 'RECEIVED',
-      targetPrepMinutes: 14,
-      createdAt: new Date().toISOString(),
-      items: [
-        {
-          id: `oi-${Date.now()}`,
-          menuItemId: randomItem.id,
-          name: randomItem.name,
-          station: randomItem.station,
-          secondaryStations: randomItem.secondaryStations,
-          quantity: qty,
-          price: randomItem.sellingPrice,
-          stationDone: false,
-        }
-      ],
-      checklist: {
-        cutlery: false,
-        saucesDips: false,
-        napkins: false,
-        tamperSeal: false,
-        beverageSeparated: false,
-      },
-      financials: fin,
-    }
-
-    setOrders((prev) => [newOrd, ...prev])
-
-    dispatchOptimisticDelta({ type: 'ORDER_PUNCHED' })
-    try {
-      const supabase = createClient()
-      const kid = getActiveKitchenId()
-      supabase.channel(`kitchen-${kid}-counters`).send({
-        type: 'broadcast',
-        event: 'nav_counter_delta',
-        payload: { action: { type: 'ORDER_PUNCHED' }, eventId: `SIM_ORDER_PUNCHED-${newOrd.id}`, senderId: getDeviceUuid() }
-      })
-    } catch (e) {}
   }
 
   const handleCreateManualOrder = ({
@@ -971,56 +797,84 @@ export function KitchenProvider({
     )
   }
 
+  const value = useMemo(
+    () => ({
+      orders,
+      isOrdersLoaded,
+      navCounts,
+      refreshNavCounts,
+      dispatchOptimisticDelta,
+      ingredients,
+      menuItems,
+      brands,
+      stockLedger,
+      purchaseOrders,
+      isPausedAll,
+      pausedPlatforms,
+      commissionSettings,
+      userRole,
+      language,
+      inspectingOrder,
+      setOrders,
+      setIsOrdersLoaded,
+      setNavCounts: setFallbackCounts,
+      setIngredients,
+      setStockLedger,
+      setPurchaseOrders,
+      setBrands,
+      setMenuItems,
+      setInspectingOrder,
+      setUserRole,
+      setLanguage,
+      updateCommissionSettings,
+      handleAdjustStockWithReason,
+      handleTogglePlatformStatus,
+      handleToggleEmergencyPause,
+      handleCreateManualOrder,
+      handleAddBrand,
+      handleAddMenuItem,
+      handleAddIngredient,
+      handleCreatePurchaseOrder,
+      handleReceivePurchaseOrder,
+      handleUpdateMenuItemPrice,
+      handleUpdateIngredientCost,
+    }),
+    [
+      orders,
+      isOrdersLoaded,
+      navCounts,
+      refreshNavCounts,
+      dispatchOptimisticDelta,
+      ingredients,
+      menuItems,
+      brands,
+      stockLedger,
+      purchaseOrders,
+      isPausedAll,
+      pausedPlatforms,
+      commissionSettings,
+      userRole,
+      language,
+      inspectingOrder,
+      setUserRole,
+      setLanguage,
+      updateCommissionSettings,
+      handleAdjustStockWithReason,
+      handleTogglePlatformStatus,
+      handleToggleEmergencyPause,
+      handleCreateManualOrder,
+      handleAddBrand,
+      handleAddMenuItem,
+      handleAddIngredient,
+      handleCreatePurchaseOrder,
+      handleReceivePurchaseOrder,
+      handleUpdateMenuItemPrice,
+      handleUpdateIngredientCost,
+    ]
+  )
+
   return (
-    <KitchenContext.Provider
-      value={{
-        orders,
-        isOrdersLoaded,
-        navCounts: navCounts,
-        refreshNavCounts,
-        dispatchOptimisticDelta,
-        ingredients,
-        menuItems,
-        brands,
-        stockLedger,
-        purchaseOrders,
-        isPausedAll,
-        pausedPlatforms,
-        commissionSettings,
-        userRole,
-        language,
-        inspectingOrder,
-        setOrders,
-        setIsOrdersLoaded,
-        setNavCounts: setFallbackCounts,
-        setIngredients,
-        setStockLedger,
-        setPurchaseOrders,
-        setBrands,
-        setMenuItems,
-        setInspectingOrder,
-        setUserRole,
-        setLanguage,
-        updateCommissionSettings,
-        handleUpdateStatus,
-        handleToggleStationItem,
-        handleMarkOrderReady,
-        handleToggleChecklistItem,
-        handleCompletePacking,
-        handleAdjustStockWithReason,
-        handleTogglePlatformStatus,
-        handleToggleEmergencyPause,
-        handleSimulateNewOrder,
-        handleCreateManualOrder,
-        handleAddBrand,
-        handleAddMenuItem,
-        handleAddIngredient,
-        handleCreatePurchaseOrder,
-        handleReceivePurchaseOrder,
-        handleUpdateMenuItemPrice,
-        handleUpdateIngredientCost,
-      }}
-    >
+    <KitchenContext.Provider value={value}>
       {children}
     </KitchenContext.Provider>
   )

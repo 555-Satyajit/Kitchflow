@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { Order, Station } from '@/types'
-import { Flame, Clock, CheckCircle2, Layers, Check, Bell, BellRing, Volume2, AlertTriangle } from 'lucide-react'
+import { Flame, Clock, CheckCircle2, Layers, Check, Bell, BellRing, Volume2, AlertTriangle, Printer, RotateCcw } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -15,6 +15,9 @@ interface KDSViewProps {
   configuredStations?: Station[]
   onToggleStationItem: (orderId: string, itemId: string) => void
   onMarkOrderReady: (orderId: string) => void
+  onPrintKot?: (order: Order) => void
+  onRecallLastBump?: () => void
+  canRecall?: boolean
   userRole?: string
 }
 
@@ -23,6 +26,9 @@ export function KDSView({
   configuredStations = [],
   onToggleStationItem,
   onMarkOrderReady,
+  onPrintKot,
+  onRecallLastBump,
+  canRecall = false,
   userRole = 'OWNER',
 }: KDSViewProps) {
   // If in Cook mode, default station to DUM_BIRYANI instead of ALL
@@ -242,6 +248,21 @@ export function KDSView({
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto min-w-0">
+          {/* Recall / Undo Button for Accidental Bumps */}
+          {canRecall && onRecallLastBump && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={onRecallLastBump}
+              className="h-9 px-3 text-xs font-bold gap-1.5 border-orange-500/40 bg-orange-500/10 text-orange-700 dark:text-orange-400 hover:bg-orange-500/20 rounded-xl transition-all shadow-xs cursor-pointer shrink-0 animate-in fade-in"
+              title="Undo last bumped order"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Recall Last</span>
+            </Button>
+          )}
+
           {/* Sound Notification Alert Toggle */}
           <button
             type="button"
@@ -376,6 +397,16 @@ export function KDSView({
                         <span className="text-base font-extrabold text-foreground font-mono tracking-tight">
                           {order.orderNumber}
                         </span>
+                        {order.syncError && (
+                          <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500 text-white animate-pulse shadow-xs flex items-center gap-1 font-mono">
+                            <span>⚠️ Sync Pending</span>
+                          </span>
+                        )}
+                        {order.isSyncing && !order.syncError && (
+                          <span className="text-[9px] font-medium tracking-wider px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-500 border border-blue-500/20 font-mono">
+                            Syncing...
+                          </span>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-1.5 text-xs text-muted-foreground flex-wrap">
@@ -390,19 +421,34 @@ export function KDSView({
                       </div>
                     </div>
 
-                    {/* Right: Urgent SLA Countdown Pill */}
+                    {/* Right: Urgent SLA Countdown Pill & KOT Print */}
                     <div className="flex flex-col items-end gap-1 shrink-0">
-                      <span className={cn(
-                        "text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 font-mono shadow-2xs border",
-                        sla.state === 'RED'
-                          ? "bg-red-600 text-white border-red-700 animate-pulse"
-                          : sla.state === 'AMBER'
-                          ? "bg-amber-500/20 text-amber-800 dark:text-amber-300 border-amber-500/40"
-                          : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30"
-                      )}>
-                        <Clock className="w-3 h-3" />
-                        <span>{sla.isOverdue ? `LATE: ${sla.formatted}` : sla.formatted}</span>
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {onPrintKot && (
+                          <button
+                            type="button"
+                            title="Print KOT Ticket"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onPrintKot(order);
+                            }}
+                            className="h-6 w-6 rounded-md flex items-center justify-center bg-background/80 hover:bg-background border border-border/80 text-muted-foreground hover:text-foreground transition-colors cursor-pointer shadow-2xs"
+                          >
+                            <Printer className="w-3.5 h-3.5 text-orange-500" />
+                          </button>
+                        )}
+                        <span className={cn(
+                          "text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 font-mono shadow-2xs border",
+                          sla.state === 'RED'
+                            ? "bg-red-600 text-white border-red-700 animate-pulse"
+                            : sla.state === 'AMBER'
+                            ? "bg-amber-500/20 text-amber-800 dark:text-amber-300 border-amber-500/40"
+                            : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30"
+                        )}>
+                          <Clock className="w-3 h-3" />
+                          <span>{sla.isOverdue ? `LATE: ${sla.formatted}` : sla.formatted}</span>
+                        </span>
+                      </div>
 
                       {allDone && (
                         <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5 font-mono">

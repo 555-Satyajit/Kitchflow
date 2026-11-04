@@ -316,6 +316,10 @@ model Order {
   version               Int               @default(0)
   acknowledgedAt        DateTime?         @map("acknowledged_at")
   readyAt               DateTime?         @map("ready_at")
+  dispatchedAt          DateTime?         @map("dispatched_at")
+  deliveredAt           DateTime?         @map("delivered_at")
+  undeliveredAt         DateTime?         @map("undelivered_at")
+  undeliveredReason     String?           @map("undelivered_reason")
 
   items                 OrderItem[]
   ledgerEntries         StockLedgerEntry[]

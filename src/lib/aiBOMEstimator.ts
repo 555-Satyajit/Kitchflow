@@ -6,6 +6,8 @@ export interface AIGeneratedRecipeItem {
   unit: 'g' | 'ml' | 'pc'
   estimatedCostPerUnit: number
   category: 'PROTEIN' | 'CARB' | 'SAUCE' | 'VEGGIE' | 'PACKAGING' | 'OTHER'
+  matchedIngredientId?: string | null
+  isExisting?: boolean
 }
 
 export interface AIBOMSuggestion {

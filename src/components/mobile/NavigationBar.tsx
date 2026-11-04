@@ -12,8 +12,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useKitchen } from '@/context/KitchenContext'
-import { useNavCounts } from '@/hooks/useNavCounts'
-import { useOutlets } from '@/hooks/useOutlets'
+import { useKitchenStore, selectNavCounts } from '@/stores/useKitchenStore'
 import { NavCountsResult } from '@/features/orders/order-actions'
 
 export interface NavigationBarProps {
@@ -29,9 +28,7 @@ export function NavigationBar({
 }: NavigationBarProps = {}) {
   const pathname = usePathname()
   const [mounted, setMounted] = useState(false)
-  const { orders, isOrdersLoaded, navCounts, ingredients } = useKitchen()
-
-  const { activeOutletId } = useOutlets()
+  const { ingredients } = useKitchen()
 
   const [profileRole, setProfileRole] = useState<'owner' | 'manager' | 'kitchen_staff'>(
     initialRole || 'owner'
@@ -40,8 +37,8 @@ export function NavigationBar({
     initialPermissions || ['orders', 'pos', 'kds', 'packing', 'inventory', 'procurement', 'margins', 'settings']
   )
 
-  // TanStack Query authoritative real-time nav counts synced with activeOutletId
-  const { data: tanstackCounts } = useNavCounts(activeOutletId, initialNavCounts || navCounts)
+  // Authoritative real-time nav counts derived directly from local-first store
+  const navBadgeCounts = useKitchenStore(selectNavCounts)
 
   useEffect(() => {
     setMounted(true)
@@ -75,18 +72,23 @@ export function NavigationBar({
     return null
   }
 
-  // Authoritative server badge counts with TanStack Query primary source and in-memory fallback
-  const authoritativeCounts = tanstackCounts || initialNavCounts || navCounts
-  const liveOrderCount = authoritativeCounts ? authoritativeCounts.ordersCount : orders.length
-  const kdsPendingCount = authoritativeCounts 
-    ? authoritativeCounts.kdsCount 
-    : orders.filter((o) => o.status === 'ACCEPTED' || o.status === 'PREPARING').length
-  const packingPendingCount = authoritativeCounts 
-    ? authoritativeCounts.packingCount 
-    : orders.filter((o) => o.status === 'PREPARING' || o.status === 'READY').length
+  // Do not render bottom nav bar on /pos so it does not collide with the POS thumb-zone floating checkout bar
+  if (pathname === '/pos') {
+    return null
+  }
+
+  // Prevent hydration mismatch between server pre-render and client-side mount
+  if (!mounted) {
+    return null
+  }
+
+  // Local-First pipeline single source of truth badges
+  const liveOrderCount = navBadgeCounts.ordersCount
+  const kdsPendingCount = navBadgeCounts.kdsCount
+  const packingPendingCount = navBadgeCounts.packingCount
   const lowStockCount = ingredients.filter((i) => i.currentStock <= i.minThreshold).length
 
-  const isNavReady = isOrdersLoaded || orders.length > 0 || authoritativeCounts !== null
+  const isNavReady = true
 
   interface NavTab {
     href: string
@@ -111,7 +113,7 @@ export function NavigationBar({
     return userPermissions.includes(t.permission)
   })
 
-  if (pathname === '/login') return null
+
 
   return (
     /* Visible on mobile, tablets, and iPads. Hidden on laptops & desktops (lg:hidden) */

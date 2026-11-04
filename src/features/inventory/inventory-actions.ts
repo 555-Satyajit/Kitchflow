@@ -1,7 +1,7 @@
 'use server';
 
 import { prisma } from '@/lib/prisma';
-import { revalidateTag } from 'next/cache';
+import { revalidateTag, revalidatePath } from 'next/cache';
 import { inventoryTags } from './inventory-cache';
 import { StockReasonCode } from '@/types';
 import { getCurrentKitchenContext } from '@/lib/session';
@@ -329,7 +329,7 @@ export async function addMenuItemAction(params: {
   sellingPrice: number;
   packagingCost?: number;
   recipe?: Array<{ ingredientId: string; quantity: number }>;
-}): Promise<ActionResult<{ menuItemId: string }>> {
+}): Promise<ActionResult<{ menuItemId: string; dish?: any }>> {
   try {
     const session = await getCurrentKitchenContext();
     if (session.role !== 'owner' && !session.permissions?.includes('inventory') && !session.permissions?.includes('settings')) {
@@ -392,13 +392,47 @@ export async function addMenuItemAction(params: {
           create: validRecipeItems,
         },
       },
+      include: {
+        recipe: {
+          include: {
+            ingredient: true,
+          },
+        },
+      },
     });
 
     if (kitchenId) {
       revalidateTag(inventoryTags.menuItems(kitchenId), 'max');
+      revalidateTag(inventoryTags.kitchen(kitchenId), 'max');
     }
+    revalidatePath('/inventory');
+    revalidatePath('/pos');
 
-    return { ok: true, data: { menuItemId: newDish.id } };
+    return {
+      ok: true,
+      data: {
+        menuItemId: newDish.id,
+        dish: {
+          id: newDish.id,
+          brandId: newDish.brandId,
+          name: newDish.name,
+          description: newDish.description || '',
+          station: newDish.station as any,
+          sellingPrice: newDish.sellingPrice,
+          packagingCost: newDish.packagingCost,
+          isAvailable: newDish.isAvailable,
+          swiggyOnline: newDish.swiggyOnline,
+          zomatoOnline: newDish.zomatoOnline,
+          lastSyncedAt: newDish.lastSyncedAt?.toISOString() || new Date().toISOString(),
+          recipe: (newDish.recipe || []).map((r) => ({
+            ingredientId: r.ingredientId,
+            ingredientName: r.ingredient?.name || '',
+            quantity: r.quantity,
+            unit: (r.ingredient?.unit as any) || 'g',
+          })),
+        },
+      },
+    };
   } catch (error) {
     console.error('Error adding menu item:', error);
     return { ok: false, error: 'Failed adding menu item' };
@@ -613,4 +647,42 @@ export async function receivePurchaseOrderAction(params: {
     return { ok: false, error: 'Failed receiving purchase order' };
   }
 }
+
+/**
+ * Server action to generate commercial dish BOM, portioning, station routing, and pricing
+ * using Google Gemini Flash API.
+ */
+export async function generateDishWithGeminiAction(params: {
+  dishName: string;
+  brandName?: string;
+  cuisineHint?: string;
+  availableInventory?: Array<{
+    id: string;
+    name: string;
+    unit: string;
+    costPerUnit: number;
+    category?: string;
+  }>;
+}): Promise<ActionResult<{
+  suggestion: import('@/lib/aiBOMEstimator').AIBOMSuggestion;
+  source: 'gemini' | 'local_fallback';
+  modelUsed?: string;
+}>> {
+  try {
+    const { generateDishWithGemini } = await import('@/lib/geminiDishGenerator');
+    const result = await generateDishWithGemini(params);
+    return { ok: true, data: result };
+  } catch (err: any) {
+    console.error('[generateDishWithGeminiAction] Exception:', err);
+    const { estimateRecipeBOM } = await import('@/lib/aiBOMEstimator');
+    return {
+      ok: true,
+      data: {
+        suggestion: estimateRecipeBOM(params.dishName),
+        source: 'local_fallback',
+      },
+    };
+  }
+}
+
 

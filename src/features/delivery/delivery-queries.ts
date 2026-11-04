@@ -7,20 +7,40 @@ import { getCurrentKitchenContext } from '@/lib/session';
 export async function getDeliveryOrders(kitchenId?: string): Promise<Order[]> {
   try {
     let targetKitchenId = kitchenId;
+    let allowedKitchenIds: string[] = [];
 
     if (!targetKitchenId) {
       const sessionCtx = await getCurrentKitchenContext();
       targetKitchenId = sessionCtx.kitchenId;
+      allowedKitchenIds = sessionCtx.kitchenIds || [];
+    } else if (targetKitchenId === 'ALL') {
+      const sessionCtx = await getCurrentKitchenContext('ALL');
+      allowedKitchenIds = sessionCtx.kitchenIds || [];
     }
 
     if (!targetKitchenId || targetKitchenId === 'default') {
       return [];
     }
 
+    const isAll = targetKitchenId === 'ALL';
+    const kitchenWhere = isAll ? { in: allowedKitchenIds } : targetKitchenId;
+
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
     const dbOrders = await prisma.order.findMany({
       where: {
-        kitchenId: targetKitchenId,
+        kitchenId: kitchenWhere,
         channel: 'DIRECT',
+        OR: [
+          // Active direct delivery runs
+          { status: { in: ['RECEIVED', 'ACCEPTED', 'PREPARING', 'READY'] } },
+          // Dispatched runs completed today
+          {
+            status: { in: ['DISPATCHED', 'CANCELLED'] },
+            createdAt: { gte: startOfToday },
+          },
+        ],
       },
       include: {
         brand: true,
@@ -47,6 +67,10 @@ export async function getDeliveryOrders(kitchenId?: string): Promise<Order[]> {
       version: (o as any).version ?? 0,
       acknowledgedAt: o.acknowledgedAt?.toISOString(),
       readyAt: o.readyAt?.toISOString(),
+      dispatchedAt: o.dispatchedAt?.toISOString(),
+      deliveredAt: o.deliveredAt?.toISOString(),
+      undeliveredAt: o.undeliveredAt?.toISOString(),
+      undeliveredReason: o.undeliveredReason ?? undefined,
       checklist: (o.checklist as unknown as Order['checklist']) ?? {
         cutlery: false,
         saucesDips: false,
