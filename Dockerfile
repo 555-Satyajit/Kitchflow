@@ -15,6 +15,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+ENV NEXT_OUTPUT_STANDALONE=true
 
 # Expose build-time Next.js public variables so they are baked into client JS bundle
 ARG NEXT_PUBLIC_SUPABASE_URL
